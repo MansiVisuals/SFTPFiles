@@ -42,6 +42,36 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         }
     }
     
+    private func performWithRetry<T>(operation: @escaping () throws -> T, retries: Int = 2) throws -> T {
+        var lastError: Error?
+        
+        for attempt in 0...retries {
+            do {
+                if attempt > 0 {
+                    NSLog("SFTPFiles: Retry attempt \(attempt)")
+                    // Force reconnection on retry
+                    sftp?.disconnect()
+                    sftp = nil
+                }
+                
+                try ensureConnection()
+                return try operation()
+            } catch {
+                lastError = error
+                NSLog("SFTPFiles: Operation failed (attempt \(attempt + 1)): \(error)")
+                
+                if attempt == retries {
+                    break
+                }
+                
+                // Brief delay before retry
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+        }
+        
+        throw lastError ?? NSFileProviderError(.serverUnreachable)
+    }
+    
     func invalidate() {
         sftp?.disconnect()
         sftp = nil
@@ -50,6 +80,13 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     private func ensureConnection() throws {
         guard let connection = connection else {
             throw NSFileProviderError(.notAuthenticated)
+        }
+        
+        // Try to reconnect if connection is lost
+        if let sftp = sftp, !sftp.connected {
+            NSLog("SFTPFiles: Connection lost, attempting to reconnect...")
+            sftp.disconnect()
+            self.sftp = nil
         }
         
         guard sftp == nil || !sftp!.connected else { return }
@@ -62,8 +99,14 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             password: connection.password
         )
         
-        try sftp!.connect()
-        try sftp!.authenticate()
+        do {
+            try sftp!.connect()
+            try sftp!.authenticate()
+            NSLog("SFTPFiles: Connection established successfully")
+        } catch {
+            NSLog("SFTPFiles: Connection failed: \(error)")
+            throw error
+        }
     }
     
     // MARK: - Enumeration
@@ -200,30 +243,53 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     func createItem(basedOn itemTemplate: NSFileProviderItem, fields: NSFileProviderItemFields, contents: URL?, options: NSFileProviderCreateItemOptions, request: NSFileProviderRequest, completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void) -> Progress {
         let progress = Progress(totalUnitCount: 100)
         
-        let parentPath = itemTemplate.parentItemIdentifier == .rootContainer ? 
-            (connection?.remotePath ?? "/") : itemTemplate.parentItemIdentifier.rawValue
-        let newPath = parentPath == "/" ? "/\(itemTemplate.filename)" : "\(parentPath)/\(itemTemplate.filename)"
+        // Construct the full path where the new item should be created
+        let parentPath: String
+        if itemTemplate.parentItemIdentifier == .rootContainer {
+            parentPath = connection?.remotePath ?? "/"
+        } else {
+            parentPath = itemTemplate.parentItemIdentifier.rawValue
+        }
+        
+        let newPath = combinePaths(parentPath, itemTemplate.filename)
+        
+        NSLog("SFTPFiles: Creating item - Parent: '\(parentPath)', Filename: '\(itemTemplate.filename)', Full path: '\(newPath)'")
         
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try self.ensureConnection()
                 
                 if itemTemplate.contentType == .folder {
-                    try self.sftp!.createDirectory(atPath: newPath)
+                    NSLog("SFTPFiles: Creating directory at: '\(newPath)'")
+                    try self.performWithRetry {
+                        try self.sftp!.createDirectory(atPath: newPath)
+                    }
                     progress.completedUnitCount = 100
                 } else if let contents = contents {
-                    let fileSize = try FileManager.default.attributesOfItem(atPath: contents.path)[.size] as? Int64 ?? 0
-                    progress.totalUnitCount = max(fileSize, 1)
+                    NSLog("SFTPFiles: Uploading file to: '\(newPath)'")
                     
-                    let inputStream = InputStream(url: contents)!
-                    try self.sftp!.write(stream: inputStream, toFileAtPath: newPath, append: false) { uploaded in
-                        DispatchQueue.main.async {
-                            progress.completedUnitCount = Int64(uploaded)
+                    // Get file size for progress tracking
+                    let attributes = try FileManager.default.attributesOfItem(atPath: contents.path)
+                    let fileSize = attributes[.size] as? Int64 ?? 0
+                    progress.totalUnitCount = max(fileSize, 100)
+                    
+                    var uploadedBytes: Int64 = 0
+                    
+                    try self.performWithRetry {
+                        let inputStream = InputStream(url: contents)!
+                        try self.sftp!.write(stream: inputStream, toFileAtPath: newPath, append: false) { uploaded in
+                            uploadedBytes = Int64(uploaded)
+                            DispatchQueue.main.async {
+                                progress.completedUnitCount = uploadedBytes
+                            }
+                            return !progress.isCancelled
                         }
-                        return !progress.isCancelled
                     }
+                    
+                    NSLog("SFTPFiles: Upload completed - \(uploadedBytes) bytes")
                 }
                 
+                // Get the created item info from server
                 let fileInfo = try self.sftp!.infoForFile(atPath: newPath)
                 let item = SFTPFileProviderItem(
                     fileInfo: fileInfo, 
@@ -231,11 +297,14 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                     downloadManager: self.downloadManager
                 )
                 
+                NSLog("SFTPFiles: Item created successfully - Name: '\(item.filename)', Path: '\(newPath)'")
+                
                 DispatchQueue.main.async {
                     progress.completedUnitCount = progress.totalUnitCount
                     completionHandler(item, [], false, nil)
                 }
             } catch {
+                NSLog("SFTPFiles: Create item error: \(error)")
                 DispatchQueue.main.async {
                     completionHandler(nil, [], false, NSFileProviderError(.serverUnreachable))
                 }
@@ -281,40 +350,67 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         let progress = Progress(totalUnitCount: 100)
         let originalPath = item.itemIdentifier.rawValue
         
+        NSLog("SFTPFiles: Modifying item - Original path: '\(originalPath)', Changed fields: \(changedFields)")
+        
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try self.ensureConnection()
                 var finalPath = originalPath
-                var needsMove = false
+                var itemMoved = false
+                var progressCompleted: Int64 = 0
                 
-                // Handle content changes first
+                // Handle content changes first (before any potential move)
                 if changedFields.contains(.contents), let contents = contents {
-                    let fileSize = try FileManager.default.attributesOfItem(atPath: contents.path)[.size] as? Int64 ?? 0
-                    progress.totalUnitCount = max(fileSize + 10, 100) // +10 for move operation if needed
+                    NSLog("SFTPFiles: Updating file contents at: '\(originalPath)'")
                     
+                    // Get file size for progress tracking
+                    let attributes = try FileManager.default.attributesOfItem(atPath: contents.path)
+                    let fileSize = attributes[.size] as? Int64 ?? 0
+                    progress.totalUnitCount = fileSize + 10 // +10 for potential move operation
+                    
+                    var uploadedBytes: Int64 = 0
                     let inputStream = InputStream(url: contents)!
+                    
                     try self.sftp!.write(stream: inputStream, toFileAtPath: originalPath, append: false) { uploaded in
+                        uploadedBytes = Int64(uploaded)
                         DispatchQueue.main.async {
-                            progress.completedUnitCount = Int64(uploaded)
+                            progress.completedUnitCount = uploadedBytes
                         }
                         return !progress.isCancelled
                     }
+                    
+                    progressCompleted = uploadedBytes
+                    NSLog("SFTPFiles: Content update completed - \(uploadedBytes) bytes")
                 }
                 
-                // Handle rename/move
+                // Handle rename/move operations
                 if changedFields.contains(.filename) || changedFields.contains(.parentItemIdentifier) {
-                    needsMove = true
-                    let newParentPath = item.parentItemIdentifier == .rootContainer ? 
-                        (self.connection?.remotePath ?? "/") : item.parentItemIdentifier.rawValue
-                    finalPath = newParentPath == "/" ? "/\(item.filename)" : "\(newParentPath)/\(item.filename)"
+                    let newParentPath: String
+                    if item.parentItemIdentifier == .rootContainer {
+                        newParentPath = self.connection?.remotePath ?? "/"
+                    } else {
+                        newParentPath = item.parentItemIdentifier.rawValue
+                    }
+                    
+                    let newPath = self.combinePaths(newParentPath, item.filename)
+                    
+                    NSLog("SFTPFiles: Moving/renaming - From: '\(originalPath)' To: '\(newPath)'")
                     
                     // Only move if the path actually changed
-                    if finalPath != originalPath {
-                        try self.sftp!.moveItem(atPath: originalPath, toPath: finalPath)
+                    if newPath != originalPath {
+                        // Verify the source file exists before attempting move
+                        let _ = try self.sftp!.infoForFile(atPath: originalPath)
+                        
+                        // Perform the move/rename
+                        try self.sftp!.moveItem(atPath: originalPath, toPath: newPath)
+                        finalPath = newPath
+                        itemMoved = true
                         
                         // Update download manager with new path
                         self.downloadManager.updatePath(from: NSFileProviderItemIdentifier(originalPath), 
                                                        to: NSFileProviderItemIdentifier(finalPath))
+                        
+                        NSLog("SFTPFiles: Move/rename completed successfully")
                     }
                 }
                 
@@ -326,13 +422,25 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                     downloadManager: self.downloadManager
                 )
                 
+                NSLog("SFTPFiles: Modify completed - Final path: '\(finalPath)', Filename: '\(updatedItem.filename)'")
+                
                 DispatchQueue.main.async {
                     progress.completedUnitCount = progress.totalUnitCount
-                    completionHandler(updatedItem, [], needsMove, nil)
+                    completionHandler(updatedItem, [], itemMoved, nil)
                 }
             } catch {
+                NSLog("SFTPFiles: Modify item error: \(error)")
                 DispatchQueue.main.async {
-                    completionHandler(nil, [], false, NSFileProviderError(.serverUnreachable))
+                    // Try to provide more specific error information
+                    let providerError: NSFileProviderError
+                    if error.localizedDescription.contains("not found") || error.localizedDescription.contains("No such file") {
+                        providerError = NSFileProviderError(.noSuchItem)
+                    } else if error.localizedDescription.contains("permission") || error.localizedDescription.contains("denied") {
+                        providerError = NSFileProviderError(.insufficientQuota)
+                    } else {
+                        providerError = NSFileProviderError(.serverUnreachable)
+                    }
+                    completionHandler(nil, [], false, providerError)
                 }
             }
         }
