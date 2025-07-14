@@ -56,12 +56,17 @@ class SFTPFileProviderItem: NSObject, NSFileProviderItem {
         
         // Always use the actual filename from the server, never the path
         if let serverFilename = fileInfo?.filename, !serverFilename.isEmpty {
-            return serverFilename
+            // Additional safety: ensure no path components are included
+            let cleanFilename = serverFilename.components(separatedBy: "/").last ?? serverFilename
+            NSLog("SFTPFiles: Item filename - Server: '\(serverFilename)', Clean: '\(cleanFilename)'")
+            return cleanFilename
         }
         
         // Fallback: extract filename from path as last resort
         let pathComponents = path.components(separatedBy: "/")
-        return pathComponents.last ?? "Unknown"
+        let fallbackFilename = pathComponents.last ?? "Unknown"
+        NSLog("SFTPFiles: Item filename fallback: '\(fallbackFilename)'")
+        return fallbackFilename
     }
     
     var contentType: UTType {

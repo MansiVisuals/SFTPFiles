@@ -18,6 +18,28 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     private func setupConnection() {
         let connections = SFTPConnectionStore.loadConnections()
         connection = connections.first { $0.id.uuidString == domain.identifier.rawValue }
+        
+        // Debug logging for connection setup
+        if let conn = connection {
+            NSLog("SFTPFiles: Setup connection - Host: \(conn.host), Remote Path: '\(conn.remotePath)'")
+        }
+    }
+    
+    private func normalizedPath(_ path: String) -> String {
+        // Remove leading/trailing slashes and normalize
+        let trimmed = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return trimmed.isEmpty ? "/" : "/\(trimmed)"
+    }
+    
+    private func combinePaths(_ basePath: String, _ subPath: String) -> String {
+        let normalizedBase = normalizedPath(basePath)
+        let normalizedSub = subPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        
+        if normalizedBase == "/" {
+            return "/\(normalizedSub)"
+        } else {
+            return "\(normalizedBase)/\(normalizedSub)"
+        }
     }
     
     func invalidate() {
@@ -51,6 +73,8 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             throw NSFileProviderError(.notAuthenticated)
         }
         
+        NSLog("SFTPFiles: Creating enumerator for container: \(containerItemIdentifier.rawValue)")
+        
         return SFTPFileProviderEnumerator(
             containerIdentifier: containerItemIdentifier,
             connection: connection
@@ -63,7 +87,9 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         let progress = Progress(totalUnitCount: 1)
         
         if identifier == .rootContainer {
-            let rootItem = SFTPFileProviderItem(rootPath: connection?.remotePath ?? "/")
+            let remotePath = connection?.remotePath ?? "/"
+            let rootItem = SFTPFileProviderItem(rootPath: remotePath)
+            NSLog("SFTPFiles: Returning root item with path: '\(remotePath)'")
             completionHandler(rootItem, nil)
             progress.completedUnitCount = 1
             return progress
@@ -72,6 +98,8 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try self.ensureConnection()
+                NSLog("SFTPFiles: Getting item info for: '\(identifier.rawValue)'")
+                
                 let fileInfo = try self.sftp!.infoForFile(atPath: identifier.rawValue)
                 let item = SFTPFileProviderItem(
                     fileInfo: fileInfo, 
@@ -84,6 +112,7 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                     progress.completedUnitCount = 1
                 }
             } catch {
+                NSLog("SFTPFiles: Error getting item info: \(error)")
                 DispatchQueue.main.async {
                     completionHandler(nil, NSFileProviderError(.noSuchItem))
                     progress.completedUnitCount = 1
@@ -108,20 +137,28 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 
                 // Get the file info first to get the actual filename
                 let fileInfo = try self.sftp!.infoForFile(atPath: itemIdentifier.rawValue)
-                let filename = fileInfo.filename
+                
+                // CRITICAL: Always use ONLY the server's filename, never any path components
+                let serverFilename = fileInfo.filename
+                
+                // Additional safety: Strip any path components that might be in the filename itself
+                let cleanFilename = serverFilename.components(separatedBy: "/").last ?? serverFilename
                 
                 // Debug logging
-                NSLog("SFTPFiles: Server filename: '\(filename)'")
-                NSLog("SFTPFiles: Full path: '\(itemIdentifier.rawValue)'")
+                NSLog("SFTPFiles: Server filename: '\(serverFilename)'")
+                NSLog("SFTPFiles: Clean filename: '\(cleanFilename)'")
+                NSLog("SFTPFiles: Full server path: '\(itemIdentifier.rawValue)'")
                 
                 // Create a unique temporary directory for this download to avoid conflicts
                 let downloadID = UUID().uuidString
                 let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("SFTPDownloads").appendingPathComponent(downloadID)
                 try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true, attributes: nil)
                 
-                let tempURL = tempDir.appendingPathComponent(filename)
+                // Use ONLY the clean filename for the local file
+                let tempURL = tempDir.appendingPathComponent(cleanFilename)
                 
                 NSLog("SFTPFiles: Creating temp file at: \(tempURL.path)")
+                NSLog("SFTPFiles: Temp file name: \(tempURL.lastPathComponent)")
                 
                 let outputStream = OutputStream(url: tempURL, append: false)!
                 
