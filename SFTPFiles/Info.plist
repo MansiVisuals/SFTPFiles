@@ -6,10 +6,16 @@
 	<array>
 		<string>fetch</string>
 		<string>processing</string>
+		<string>background-processing</string>
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.mansivisuals.sftpfiles.refresh</string>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

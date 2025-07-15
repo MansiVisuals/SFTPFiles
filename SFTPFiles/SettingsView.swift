@@ -77,6 +77,7 @@ enum BatteryImpact {
 struct PollingSettingsView: View {
     @ObservedObject var pollingManager: ConnectionPollingManager
     @State private var showingIntervalPicker = false
+    @State private var isForceRefreshing = false
     
     private var currentInterval: PollingInterval {
         return PollingInterval(rawValue: pollingManager.pollingInterval) ?? .onceDaily
@@ -258,8 +259,8 @@ struct PollingSettingsView: View {
                     }
                     .padding(.horizontal, 20)
                     
-                    // Last Sync Information
-                    VStack(alignment: .leading, spacing: 8) {
+                    // Last Sync Information & Manual Controls
+                    VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Text("Last Check")
                                 .font(.subheadline)
@@ -273,17 +274,59 @@ struct PollingSettingsView: View {
                                 .foregroundColor(.primary)
                         }
                         
-                        // Manual sync button
-                        Button(action: { pollingManager.manualSync() }) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.system(size: 14, weight: .medium))
-                                
-                                Text("Check Now")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
+                        // Manual sync buttons
+                        HStack(spacing: 12) {
+                            Button(action: { pollingManager.manualSync() }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.system(size: 14, weight: .medium))
+                                    
+                                    Text("Check Now")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                }
+                                .foregroundColor(.accentColor)
                             }
-                            .foregroundColor(.accentColor)
+                            
+                            Spacer()
+                            
+                            Button(action: { forceRefreshAll() }) {
+                                HStack(spacing: 8) {
+                                    if isForceRefreshing {
+                                        ProgressView()
+                                            .scaleEffect(0.8)
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    } else {
+                                        Image(systemName: "arrow.triangle.2.circlepath")
+                                            .font(.system(size: 14, weight: .medium))
+                                    }
+                                    
+                                    Text(isForceRefreshing ? "Refreshing..." : "Force Refresh")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(isForceRefreshing ? Color.blue.opacity(0.5) : Color.blue)
+                                )
+                            }
+                            .disabled(isForceRefreshing)
+                        }
+                        
+                        // Force refresh explanation
+                        if isForceRefreshing {
+                            HStack(spacing: 8) {
+                                Image(systemName: "info.circle")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                                
+                                Text("Force refresh disconnects and reconnects all domains to clear cached data")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
                     .padding(.horizontal, 20)
@@ -306,70 +349,16 @@ struct PollingSettingsView: View {
             )
         }
     }
-}
-
-struct PollingIntervalPickerView: View {
-    let selectedInterval: PollingInterval
-    let onIntervalSelected: (PollingInterval) -> Void
-    @Environment(\.presentationMode) var presentationMode
     
-    var body: some View {
-        NavigationView {
-            List {
-                Section {
-                    ForEach(PollingInterval.allCases) { interval in
-                        Button(action: {
-                            onIntervalSelected(interval)
-                        }) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(interval.displayName)
-                                        .font(.body)
-                                        .foregroundColor(.primary)
-                                    
-                                    HStack(spacing: 8) {
-                                        Image(systemName: interval.batteryImpact.iconName)
-                                            .font(.caption)
-                                            .foregroundColor(interval.batteryImpact.color)
-                                        
-                                        Text(interval.description)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                
-                                Spacer()
-                                
-                                if interval == selectedInterval {
-                                    Image(systemName: "checkmark")
-                                        .font(.body)
-                                        .foregroundColor(.accentColor)
-                                        .fontWeight(.semibold)
-                                }
-                            }
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                    }
-                } header: {
-                    Text("Select Check Frequency")
-                } footer: {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("More frequent checking provides faster status updates but uses more battery.")
-                        
-                        Text("For best battery life, consider using 'Once daily' or longer intervals.")
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            .navigationTitle("Check Frequency")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        presentationMode.wrappedValue.dismiss()
-                    }
-                }
-            }
+    private func forceRefreshAll() {
+        isForceRefreshing = true
+        
+        NSLog("SFTPFiles: Force refresh initiated from settings")
+        pollingManager.forceRefreshAllConnections()
+        
+        // Reset the state after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            isForceRefreshing = false
         }
     }
 }

@@ -96,9 +96,9 @@ class ConnectionPollingManager: ObservableObject {
             }
         }
         
-        // After connection checks, sync Files app if enabled and not using NATS
+        // After connection checks, sync Files app if enabled
         group.notify(queue: .main) {
-            if self.isFilesSyncEnabled && !self.isNATSEnabled {
+            if self.isFilesSyncEnabled {
                 self.syncFilesApp()
             }
             NSLog("SFTPFiles: Polling cycle completed")
@@ -128,27 +128,87 @@ class ConnectionPollingManager: ObservableObject {
         
         NSLog("SFTPFiles: Starting Files app sync")
         
-        for connection in viewModel.connections {
-            let domainIdentifier = NSFileProviderDomainIdentifier(rawValue: connection.id.uuidString)
+        // First, get all domains
+        NSFileProviderManager.getDomainsWithCompletionHandler { [weak self] domains, error in
+            guard let self = self else { return }
             
-            // Get all domains and find the matching one
-            NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
-                guard error == nil else {
-                    NSLog("SFTPFiles: Failed to get domains: \(error!.localizedDescription)")
-                    return
-                }
+            if let error = error {
+                NSLog("SFTPFiles: Failed to get domains: \(error.localizedDescription)")
+                return
+            }
+            
+            let syncGroup = DispatchGroup()
+            
+            // For each connection, trigger sync
+            for connection in viewModel.connections {
+                let domainIdentifier = NSFileProviderDomainIdentifier(rawValue: connection.id.uuidString)
                 
-                // Find the domain that matches our connection
                 if let domain = domains.first(where: { $0.identifier == domainIdentifier }) {
-                    NSFileProviderManager(for: domain)?.signalEnumerator(for: .rootContainer) { error in
+                    syncGroup.enter()
+                    
+                    let manager = NSFileProviderManager(for: domain)
+                    
+                    // Signal root container for re-enumeration
+                    manager?.signalEnumerator(for: .rootContainer) { error in
                         if let error = error {
-                            NSLog("SFTPFiles: Failed to signal enumerator for \(connection.name): \(error.localizedDescription)")
+                            NSLog("SFTPFiles: Failed to signal root enumerator for \(connection.name): \(error.localizedDescription)")
                         } else {
-                            NSLog("SFTPFiles: Successfully signaled enumerator for \(connection.name)")
+                            NSLog("SFTPFiles: Successfully signaled root enumerator for \(connection.name)")
                         }
+                        syncGroup.leave()
                     }
+                    
+                    // Also signal any cached working sets
+                    syncGroup.enter()
+                    manager?.signalEnumerator(for: .workingSet) { error in
+                        if let error = error {
+                            NSLog("SFTPFiles: Failed to signal working set for \(connection.name): \(error.localizedDescription)")
+                        } else {
+                            NSLog("SFTPFiles: Successfully signaled working set for \(connection.name)")
+                        }
+                        syncGroup.leave()
+                    }
+                    
                 } else {
                     NSLog("SFTPFiles: Domain not found for connection: \(connection.name)")
+                }
+            }
+            
+            syncGroup.notify(queue: .main) {
+                NSLog("SFTPFiles: Files app sync completed")
+            }
+        }
+    }
+    
+    // Add force refresh method
+    func forceRefreshAllConnections() {
+        NSLog("SFTPFiles: Force refreshing all connections")
+        
+        NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
+            guard error == nil else {
+                NSLog("SFTPFiles: Failed to get domains for force refresh: \(error!.localizedDescription)")
+                return
+            }
+            
+            for domain in domains {
+                let manager = NSFileProviderManager(for: domain)
+                
+                // Disconnect and reconnect the domain
+                manager?.disconnect(reason: "Force refresh") { error in
+                    if let error = error {
+                        NSLog("SFTPFiles: Failed to disconnect domain \(domain.displayName): \(error.localizedDescription)")
+                    } else {
+                        NSLog("SFTPFiles: Successfully disconnected domain \(domain.displayName)")
+                        
+                        // Immediately reconnect
+                        manager?.reconnect { error in
+                            if let error = error {
+                                NSLog("SFTPFiles: Failed to reconnect domain \(domain.displayName): \(error.localizedDescription)")
+                            } else {
+                                NSLog("SFTPFiles: Successfully reconnected domain \(domain.displayName)")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -423,19 +483,34 @@ class SFTPConnectionViewModel: ObservableObject {
             identifier: NSFileProviderDomainIdentifier(rawValue: connection.id.uuidString),
             displayName: connection.name
         )
+        
+        // Force refresh the domain
         NSFileProviderManager.remove(domain) { _ in
-            NSFileProviderManager.add(domain) { error in
-                DispatchQueue.main.async {
-                    if let error = error {
-                        let nsError = error as NSError
-                        if nsError.localizedDescription.contains("already exists") ||
-                           nsError.localizedDescription.contains("duplicate") {
-                            NSLog("Domain '\(connection.name)' already exists after update")
-                            return
+            // Small delay to ensure clean removal
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NSFileProviderManager.add(domain) { error in
+                    DispatchQueue.main.async {
+                        if let error = error {
+                            let nsError = error as NSError
+                            if nsError.localizedDescription.contains("already exists") ||
+                               nsError.localizedDescription.contains("duplicate") {
+                                NSLog("Domain '\(connection.name)' already exists after update")
+                                return
+                            }
+                            NSLog("Failed to update domain: \(error.localizedDescription)")
+                        } else {
+                            NSLog("Successfully updated domain for \(connection.name)")
+                            
+                            // Trigger immediate sync after domain update
+                            let manager = NSFileProviderManager(for: domain)
+                            manager?.signalEnumerator(for: .rootContainer) { error in
+                                if let error = error {
+                                    NSLog("Failed to signal enumerator after update: \(error.localizedDescription)")
+                                } else {
+                                    NSLog("Successfully signaled enumerator after domain update")
+                                }
+                            }
                         }
-                        NSLog("Failed to update domain: \(error.localizedDescription)")
-                    } else {
-                        NSLog("Successfully updated domain for \(connection.name)")
                     }
                 }
             }
@@ -589,6 +664,15 @@ struct ContentView: View {
                             .foregroundColor(.accentColor)
                     }
                 }
+                
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { 
+                        viewModel.pollingManager.forceRefreshAllConnections()
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundColor(.accentColor)
+                    }
+                }
             }
             .sheet(isPresented: $viewModel.showAddSheet) {
                 AddEditConnectionView(viewModel: viewModel)
@@ -710,6 +794,20 @@ struct ConnectionRow: View {
                 }
                 .buttonStyle(BorderlessButtonStyle())
                 
+                // Add individual refresh button
+                Button(action: {
+                    refreshConnection()
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.blue)
+                        .cornerRadius(10)
+                        .shadow(color: Color.blue.opacity(0.3), radius: 2, x: 0, y: 1)
+                }
+                .buttonStyle(BorderlessButtonStyle())
+                
                 if onDelete != nil {
                     Button(action: {
                         showingDeleteAlert = true
@@ -743,23 +841,45 @@ struct ConnectionRow: View {
         }
     }
     
-    private var statusColor: Color {
-        switch connection.status {
-        case .connected, .valid: return .green
-        case .disconnected, .invalid, .error: return .red
-        case .checking: return .blue
-        case .timeout: return .orange
-        case .unknown: return .gray
+    private func refreshConnection() {
+        NSLog("SFTPFiles: Refreshing individual connection: \(connection.name)")
+        
+        // Test connection and update status
+        viewModel.pollingManager.checkConnection(connection) {
+            // After connection check, refresh the Files app for this connection
+            refreshFilesAppForConnection()
         }
     }
     
-    private var statusIcon: String {
-        switch connection.status {
-        case .connected, .valid: return "checkmark.circle.fill"
-        case .disconnected, .invalid, .error: return "xmark.octagon.fill"
-        case .checking: return "arrow.triangle.2.circlepath"
-        case .timeout: return "clock.badge.exclamationmark"
-        case .unknown: return "questionmark.circle"
+    private func refreshFilesAppForConnection() {
+        let domainIdentifier = NSFileProviderDomainIdentifier(rawValue: connection.id.uuidString)
+        
+        NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
+            guard error == nil else {
+                NSLog("SFTPFiles: Failed to get domains for individual refresh: \(error!.localizedDescription)")
+                return
+            }
+            
+            if let domain = domains.first(where: { $0.identifier == domainIdentifier }) {
+                let manager = NSFileProviderManager(for: domain)
+                
+                // Force disconnect and reconnect to refresh
+                manager?.disconnect(reason: "Manual refresh") { error in
+                    if let error = error {
+                        NSLog("SFTPFiles: Failed to disconnect for refresh: \(error.localizedDescription)")
+                    }
+                    
+                    // Reconnect after brief delay
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        manager?.reconnect { error in
+                            if let error = error {
+                                NSLog("SFTPFiles: Failed to reconnect after refresh: \(error.localizedDescription)")
+                            } else {
+                                NSLog("SFTPFiles: Successfully refreshed connection: \(connection.name)")
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
-}
