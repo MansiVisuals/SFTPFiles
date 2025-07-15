@@ -4,7 +4,7 @@ import FileProvider
 import mft
 import UIKit
 
-// MARK: - Polling Manager
+// MARK: - Simple Polling Manager
 class ConnectionPollingManager: ObservableObject {
     @Published var pollingInterval: TimeInterval = 86400.0  // Default to once daily
     @Published var isPollingEnabled: Bool = true
@@ -17,7 +17,6 @@ class ConnectionPollingManager: ObservableObject {
     private var timer: Timer?
     private weak var viewModel: SFTPConnectionViewModel?
     private let appGroupID = "group.mansivisuals.SFTPFiles"
-    private let bgTaskIdentifier = "com.mansivisuals.sftpfiles.refresh"
     
     init(viewModel: SFTPConnectionViewModel) {
         self.viewModel = viewModel
@@ -43,13 +42,11 @@ class ConnectionPollingManager: ObservableObject {
         }
         
         performPollingCycle()
-        scheduleBackgroundRefresh()
     }
     
     func stopPolling() {
         timer?.invalidate()
         timer = nil
-        cancelBackgroundRefresh()
     }
     
     func updatePollingInterval(_ interval: TimeInterval) {
@@ -78,6 +75,7 @@ class ConnectionPollingManager: ObservableObject {
         performPollingCycle()
     }
     
+    // MARK: - Simple Polling Cycle
     private func performPollingCycle() {
         guard let viewModel = self.viewModel else { return }
         
@@ -123,23 +121,20 @@ class ConnectionPollingManager: ObservableObject {
         }
     }
     
+    // MARK: - Simple Files App Sync
     private func syncFilesApp() {
         guard let viewModel = self.viewModel else { return }
         
         NSLog("SFTPFiles: Starting Files app sync")
         
-        // First, get all domains
-        NSFileProviderManager.getDomainsWithCompletionHandler { [weak self] domains, error in
-            guard let self = self else { return }
-            
-            if let error = error {
-                NSLog("SFTPFiles: Failed to get domains: \(error.localizedDescription)")
+        NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
+            guard error == nil else {
+                NSLog("SFTPFiles: Failed to get domains: \(error!.localizedDescription)")
                 return
             }
             
             let syncGroup = DispatchGroup()
             
-            // For each connection, trigger sync
             for connection in viewModel.connections {
                 let domainIdentifier = NSFileProviderDomainIdentifier(rawValue: connection.id.uuidString)
                 
@@ -157,18 +152,6 @@ class ConnectionPollingManager: ObservableObject {
                         }
                         syncGroup.leave()
                     }
-                    
-                    // Also signal any cached working sets
-                    syncGroup.enter()
-                    manager?.signalEnumerator(for: .workingSet) { error in
-                        if let error = error {
-                            NSLog("SFTPFiles: Failed to signal working set for \(connection.name): \(error.localizedDescription)")
-                        } else {
-                            NSLog("SFTPFiles: Successfully signaled working set for \(connection.name)")
-                        }
-                        syncGroup.leave()
-                    }
-                    
                 } else {
                     NSLog("SFTPFiles: Domain not found for connection: \(connection.name)")
                 }
@@ -180,7 +163,7 @@ class ConnectionPollingManager: ObservableObject {
         }
     }
     
-    // Add force refresh method (Fixed: Remove disconnect/reconnect calls)
+    // MARK: - Force Refresh
     func forceRefreshAllConnections() {
         NSLog("SFTPFiles: Force refreshing all connections")
         
@@ -193,20 +176,12 @@ class ConnectionPollingManager: ObservableObject {
             for domain in domains {
                 let manager = NSFileProviderManager(for: domain)
                 
-                // Signal enumerators for refresh instead of disconnect/reconnect
+                // Signal enumerators for refresh
                 manager?.signalEnumerator(for: .rootContainer) { error in
                     if let error = error {
                         NSLog("SFTPFiles: Failed to signal root enumerator for \(domain.displayName): \(error.localizedDescription)")
                     } else {
                         NSLog("SFTPFiles: Successfully signaled root enumerator for \(domain.displayName)")
-                    }
-                }
-                
-                manager?.signalEnumerator(for: .workingSet) { error in
-                    if let error = error {
-                        NSLog("SFTPFiles: Failed to signal working set for \(domain.displayName): \(error.localizedDescription)")
-                    } else {
-                        NSLog("SFTPFiles: Successfully signaled working set for \(domain.displayName)")
                     }
                 }
             }
@@ -260,38 +235,6 @@ class ConnectionPollingManager: ObservableObject {
         ) { [weak self] _ in
             self?.checkBackgroundRefreshStatus()
         }
-    }
-    
-    func handleBackgroundRefreshStatusChange() {
-        checkBackgroundRefreshStatus()
-        
-        if backgroundRefreshStatus != .available && isPollingEnabled {
-            NSLog("SFTPFiles: Background App Refresh is disabled - connection monitoring will not work in background")
-            showBackgroundRefreshAlert = true
-        }
-    }
-    
-    func scheduleBackgroundRefresh() {
-        guard isPollingEnabled else { return }
-        
-        guard backgroundRefreshStatus == .available else {
-            NSLog("SFTPFiles: Background App Refresh is disabled - cannot schedule background tasks")
-            return
-        }
-        
-        let request = BGAppRefreshTaskRequest(identifier: bgTaskIdentifier)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: pollingInterval)
-        
-        do {
-            try BGTaskScheduler.shared.submit(request)
-            NSLog("SFTPFiles: Background refresh scheduled for \(pollingInterval) seconds")
-        } catch {
-            NSLog("SFTPFiles: Failed to schedule background refresh: \(error)")
-        }
-    }
-    
-    private func cancelBackgroundRefresh() {
-        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: bgTaskIdentifier)
     }
     
     func enableNATS(_ enabled: Bool) {
@@ -688,17 +631,6 @@ struct ContentView: View {
     
     private func refreshAllConnections() {
         NSLog("SFTPFiles: Manual refresh triggered")
-        
-        // Check if background refresh is available and disable polling for connections if not
-        if viewModel.pollingManager.backgroundRefreshStatus != .available {
-            for connection in viewModel.connections {
-                if connection.isPollingEnabled {
-                    viewModel.togglePolling(for: connection, enabled: false)
-                }
-            }
-        }
-        
-        // Use the polling manager's manual sync
         viewModel.pollingManager.manualSync()
     }
 }
@@ -709,8 +641,6 @@ struct ConnectionRow: View {
     let onEdit: () -> Void
     let onDelete: (() -> Void)?
     @State private var showingDeleteAlert = false
-    @State private var timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-    @State private var now = Date()
     @EnvironmentObject private var viewModel: SFTPConnectionViewModel
     
     var body: some View {
@@ -793,20 +723,6 @@ struct ConnectionRow: View {
                 }
                 .buttonStyle(BorderlessButtonStyle())
                 
-                // Add individual refresh button
-                Button(action: {
-                    refreshConnection()
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.blue)
-                        .cornerRadius(10)
-                        .shadow(color: Color.blue.opacity(0.3), radius: 2, x: 0, y: 1)
-                }
-                .buttonStyle(BorderlessButtonStyle())
-                
                 if onDelete != nil {
                     Button(action: {
                         showingDeleteAlert = true
@@ -840,7 +756,6 @@ struct ConnectionRow: View {
         }
     }
     
-    // Fixed: Add missing statusColor computed property
     private var statusColor: Color {
         switch connection.status {
         case .connected, .valid: return .green
@@ -851,7 +766,6 @@ struct ConnectionRow: View {
         }
     }
     
-    // Fixed: Add missing statusIcon computed property
     private var statusIcon: String {
         switch connection.status {
         case .connected, .valid: return "checkmark.circle.fill"
@@ -859,48 +773,6 @@ struct ConnectionRow: View {
         case .checking: return "arrow.triangle.2.circlepath"
         case .timeout: return "clock.badge.exclamationmark"
         case .unknown: return "questionmark.circle"
-        }
-    }
-    
-    private func refreshConnection() {
-        NSLog("SFTPFiles: Refreshing individual connection: \(connection.name)")
-        
-        // Test connection and update status
-        viewModel.pollingManager.checkConnection(connection) {
-            // After connection check, refresh the Files app for this connection
-            refreshFilesAppForConnection()
-        }
-    }
-    
-    private func refreshFilesAppForConnection() {
-        let domainIdentifier = NSFileProviderDomainIdentifier(rawValue: connection.id.uuidString)
-        
-        NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
-            guard error == nil else {
-                NSLog("SFTPFiles: Failed to get domains for individual refresh: \(error!.localizedDescription)")
-                return
-            }
-            
-            if let domain = domains.first(where: { $0.identifier == domainIdentifier }) {
-                let manager = NSFileProviderManager(for: domain)
-                
-                // Use signaling instead of disconnect/reconnect for iOS compatibility
-                manager?.signalEnumerator(for: .rootContainer) { error in
-                    if let error = error {
-                        NSLog("SFTPFiles: Failed to signal root enumerator for refresh: \(error.localizedDescription)")
-                    } else {
-                        NSLog("SFTPFiles: Successfully refreshed connection: \(connection.name)")
-                    }
-                }
-                
-                manager?.signalEnumerator(for: .workingSet) { error in
-                    if let error = error {
-                        NSLog("SFTPFiles: Failed to signal working set for refresh: \(error.localizedDescription)")
-                    } else {
-                        NSLog("SFTPFiles: Successfully signaled working set for refresh")
-                    }
-                }
-            }
         }
     }
 }

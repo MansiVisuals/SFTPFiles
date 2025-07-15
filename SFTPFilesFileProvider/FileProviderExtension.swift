@@ -63,6 +63,35 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         }
     }
     
+    // MARK: - Remote Path Handling
+    private func getEffectiveRemotePath() -> String {
+        return connection?.remotePath.isEmpty == false ? connection!.remotePath : "/"
+    }
+    
+    private func pathRelativeToRemote(_ path: String) -> String {
+        let remotePath = getEffectiveRemotePath()
+        if remotePath == "/" {
+            return path
+        }
+        
+        // If path starts with remote path, return the relative part
+        if path.hasPrefix(remotePath) {
+            let relativePath = String(path.dropFirst(remotePath.count))
+            return relativePath.isEmpty ? "/" : relativePath
+        }
+        
+        // Otherwise, combine them
+        return combinePaths(remotePath, path)
+    }
+    
+    private func absolutePathFromRelative(_ relativePath: String) -> String {
+        let remotePath = getEffectiveRemotePath()
+        if remotePath == "/" {
+            return relativePath
+        }
+        return combinePaths(remotePath, relativePath)
+    }
+    
     private func performWithRetry<T>(operation: @escaping () throws -> T, retries: Int = 2) throws -> T {
         var lastError: Error?
         
@@ -128,7 +157,7 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         }
     }
     
-    // MARK: - Enumeration with Sync Support
+    // MARK: - Enumeration with Proper Remote Path Support
     
     func enumerator(for containerItemIdentifier: NSFileProviderItemIdentifier, request: NSFileProviderRequest) throws -> NSFileProviderEnumerator {
         guard let connection = connection else {
@@ -152,7 +181,7 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         NSLog("SFTPFiles: Getting item for identifier: \(identifier.rawValue)")
         
         if identifier == .rootContainer {
-            let remotePath = connection?.remotePath ?? "/"
+            let remotePath = getEffectiveRemotePath()
             let rootItem = SFTPFileProviderItem(rootPath: remotePath)
             NSLog("SFTPFiles: Returning root item with path: '\(remotePath)'")
             completionHandler(rootItem, nil)
@@ -163,10 +192,14 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try self.performWithRetry {
-                    let fileInfo = try self.sftp!.infoForFile(atPath: identifier.rawValue)
+                    // Use the identifier as the absolute path
+                    let absolutePath = identifier.rawValue
+                    NSLog("SFTPFiles: Getting file info for absolute path: '\(absolutePath)'")
+                    
+                    let fileInfo = try self.sftp!.infoForFile(atPath: absolutePath)
                     let item = SFTPFileProviderItem(
                         fileInfo: fileInfo, 
-                        path: identifier.rawValue,
+                        path: absolutePath,
                         downloadManager: self.downloadManager
                     )
                     
@@ -197,7 +230,7 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         return progress
     }
     
-    // MARK: - File Operations
+    // MARK: - File Operations with Proper Remote Path Handling
     
     func fetchContents(for itemIdentifier: NSFileProviderItemIdentifier, version: NSFileProviderItemVersion?, request: NSFileProviderRequest, completionHandler: @escaping (URL?, NSFileProviderItem?, Error?) -> Void) -> Progress {
         let progress = Progress(totalUnitCount: 100)
@@ -207,11 +240,12 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try self.performWithRetry {
-                    let fileInfo = try self.sftp!.infoForFile(atPath: itemIdentifier.rawValue)
+                    let absolutePath = itemIdentifier.rawValue
+                    let fileInfo = try self.sftp!.infoForFile(atPath: absolutePath)
                     let serverFilename = fileInfo.filename
                     let cleanFilename = serverFilename.components(separatedBy: "/").last ?? serverFilename
                     
-                    NSLog("SFTPFiles: Downloading file: '\(cleanFilename)' from '\(itemIdentifier.rawValue)'")
+                    NSLog("SFTPFiles: Downloading file: '\(cleanFilename)' from '\(absolutePath)'")
                     
                     let downloadID = UUID().uuidString
                     let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("SFTPDownloads").appendingPathComponent(downloadID)
@@ -220,7 +254,7 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                     let tempURL = tempDir.appendingPathComponent(cleanFilename)
                     let outputStream = OutputStream(url: tempURL, append: false)!
                     
-                    try self.sftp!.contents(atPath: itemIdentifier.rawValue, toStream: outputStream, fromPosition: 0) { downloaded, total in
+                    try self.sftp!.contents(atPath: absolutePath, toStream: outputStream, fromPosition: 0) { downloaded, total in
                         DispatchQueue.main.async {
                             if total > 0 {
                                 progress.completedUnitCount = Int64((Double(downloaded) / Double(total)) * 100)
@@ -231,7 +265,7 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                     
                     let item = SFTPFileProviderItem(
                         fileInfo: fileInfo, 
-                        path: itemIdentifier.rawValue,
+                        path: absolutePath,
                         downloadManager: self.downloadManager
                     )
                     
@@ -256,9 +290,10 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     func createItem(basedOn itemTemplate: NSFileProviderItem, fields: NSFileProviderItemFields, contents: URL?, options: NSFileProviderCreateItemOptions, request: NSFileProviderRequest, completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void) -> Progress {
         let progress = Progress(totalUnitCount: 100)
         
+        // Determine the parent path
         let parentPath: String
         if itemTemplate.parentItemIdentifier == .rootContainer {
-            parentPath = connection?.remotePath ?? "/"
+            parentPath = getEffectiveRemotePath()
         } else {
             parentPath = itemTemplate.parentItemIdentifier.rawValue
         }
@@ -331,13 +366,14 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try self.performWithRetry {
-                    let fileInfo = try self.sftp!.infoForFile(atPath: identifier.rawValue)
-                    let parentPath = (identifier.rawValue as NSString).deletingLastPathComponent
+                    let absolutePath = identifier.rawValue
+                    let fileInfo = try self.sftp!.infoForFile(atPath: absolutePath)
+                    let parentPath = (absolutePath as NSString).deletingLastPathComponent
                     
                     if fileInfo.isDirectory {
-                        try self.sftp!.removeDirectory(atPath: identifier.rawValue)
+                        try self.sftp!.removeDirectory(atPath: absolutePath)
                     } else {
-                        try self.sftp!.removeFile(atPath: identifier.rawValue)
+                        try self.sftp!.removeFile(atPath: absolutePath)
                     }
                     
                     self.downloadManager.removeDownload(for: identifier)
@@ -398,7 +434,7 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                     if changedFields.contains(.filename) || changedFields.contains(.parentItemIdentifier) {
                         let newParentPath: String
                         if item.parentItemIdentifier == .rootContainer {
-                            newParentPath = self.connection?.remotePath ?? "/"
+                            newParentPath = self.getEffectiveRemotePath()
                         } else {
                             newParentPath = item.parentItemIdentifier.rawValue
                         }
@@ -478,7 +514,8 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     private func signalEnumeratorForContainer(_ containerPath: String) {
         let containerIdentifier: NSFileProviderItemIdentifier
         
-        if containerPath.isEmpty || containerPath == "/" || containerPath == connection?.remotePath {
+        let remotePath = getEffectiveRemotePath()
+        if containerPath.isEmpty || containerPath == "/" || containerPath == remotePath {
             containerIdentifier = .rootContainer
         } else {
             containerIdentifier = NSFileProviderItemIdentifier(containerPath)
@@ -496,15 +533,6 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 NSLog("SFTPFiles: Successfully signaled enumerator for container: \(containerPath)")
             }
         }
-        
-        // Also signal working set for better sync
-        manager?.signalEnumerator(for: .workingSet) { error in
-            if let error = error {
-                NSLog("SFTPFiles: Failed to signal working set for container \(containerPath): \(error.localizedDescription)")
-            } else {
-                NSLog("SFTPFiles: Successfully signaled working set for container: \(containerPath)")
-            }
-        }
     }
     
     // MARK: - Public sync methods for polling manager
@@ -513,7 +541,7 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         NSLog("SFTPFiles: Sync triggered by polling manager")
         
         // Signal root container
-        signalEnumeratorForContainer(connection?.remotePath ?? "/")
+        signalEnumeratorForContainer(getEffectiveRemotePath())
         
         // Update sync anchor
         let newAnchor = NSFileProviderSyncAnchor("sync_\(Date().timeIntervalSince1970)".data(using: .utf8)!)
@@ -533,7 +561,7 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     }
 }
 
-// MARK: - Download Manager
+// MARK: - Download Manager (unchanged)
 
 class DownloadManager {
     private var downloads: [NSFileProviderItemIdentifier: URL] = [:]

@@ -6,35 +6,16 @@ class SFTPFileProviderEnumerator: NSObject, NSFileProviderEnumerator {
     private let containerIdentifier: NSFileProviderItemIdentifier
     private let connection: SFTPConnection
     private var sftp: MFTSftpConnection?
-    private var lastSyncAnchor: NSFileProviderSyncAnchor?
     
     init(containerIdentifier: NSFileProviderItemIdentifier, connection: SFTPConnection) {
         self.containerIdentifier = containerIdentifier
         self.connection = connection
         super.init()
-        loadLastSyncAnchor()
     }
     
     func invalidate() {
         sftp?.disconnect()
         sftp = nil
-    }
-    
-    private func loadLastSyncAnchor() {
-        let defaults = UserDefaults(suiteName: "group.mansivisuals.SFTPFiles")
-        let key = "syncAnchor_\(connection.id.uuidString)_\(containerIdentifier.rawValue)"
-        
-        if let data = defaults?.data(forKey: key) {
-            lastSyncAnchor = NSFileProviderSyncAnchor(data)
-        }
-    }
-    
-    private func saveLastSyncAnchor(_ anchor: NSFileProviderSyncAnchor) {
-        let defaults = UserDefaults(suiteName: "group.mansivisuals.SFTPFiles")
-        let key = "syncAnchor_\(connection.id.uuidString)_\(containerIdentifier.rawValue)"
-        defaults?.set(anchor.rawValue, forKey: key)
-        defaults?.synchronize()
-        lastSyncAnchor = anchor
     }
     
     private func ensureConnection() throws {
@@ -61,8 +42,11 @@ class SFTPFileProviderEnumerator: NSObject, NSFileProviderEnumerator {
             NSLog("SFTPFiles: Root container path: '\(remotePath)'")
             return remotePath
         }
-        NSLog("SFTPFiles: Container path: '\(identifier.rawValue)'")
-        return identifier.rawValue
+        
+        // For regular paths, use the identifier as-is (it should be an absolute path)
+        let path = identifier.rawValue
+        NSLog("SFTPFiles: Container path: '\(path)'")
+        return path
     }
     
     func enumerateItems(for observer: NSFileProviderEnumerationObserver, startingAt page: NSFileProviderPage) {
@@ -125,7 +109,7 @@ class SFTPFileProviderEnumerator: NSObject, NSFileProviderEnumerator {
         NSLog("SFTPFiles: Enumerating changes from sync anchor for path: '\(pathForContainer(containerIdentifier))'")
         
         // Since SFTP doesn't support incremental change tracking, we need to do a full enumeration
-        // and compare with what we had before
+        // and report all items as updates to force the Files app to refresh
         
         let path = pathForContainer(containerIdentifier)
         
@@ -143,7 +127,6 @@ class SFTPFileProviderEnumerator: NSObject, NSFileProviderEnumerator {
                 
                 // Create new sync anchor with current timestamp
                 let newAnchor = NSFileProviderSyncAnchor("change_\(Date().timeIntervalSince1970)".data(using: .utf8)!)
-                self.saveLastSyncAnchor(newAnchor)
                 
                 NSLog("SFTPFiles: Reporting \(providerItems.count) items as changed")
                 
@@ -154,14 +137,12 @@ class SFTPFileProviderEnumerator: NSObject, NSFileProviderEnumerator {
                     observer.finishEnumeratingChanges(upTo: newAnchor, moreComing: false)
                 }
                 
-                // Clean up connection
                 self.sftp?.disconnect()
                 self.sftp = nil
                 
             } catch {
                 NSLog("SFTPFiles: Change enumeration failed for path '\(path)': \(error.localizedDescription)")
                 
-                // Clean up connection on error
                 self.sftp?.disconnect()
                 self.sftp = nil
                 
@@ -185,15 +166,9 @@ class SFTPFileProviderEnumerator: NSObject, NSFileProviderEnumerator {
     }
     
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {
-        // Return the last saved anchor or create a new one
-        if let anchor = lastSyncAnchor {
-            NSLog("SFTPFiles: Returning existing sync anchor")
-            completionHandler(anchor)
-        } else {
-            NSLog("SFTPFiles: Creating new sync anchor")
-            let anchor = NSFileProviderSyncAnchor("initial_\(Date().timeIntervalSince1970)".data(using: .utf8)!)
-            saveLastSyncAnchor(anchor)
-            completionHandler(anchor)
-        }
+        // Always return a new sync anchor based on current time
+        NSLog("SFTPFiles: Creating new sync anchor")
+        let anchor = NSFileProviderSyncAnchor("sync_\(Date().timeIntervalSince1970)".data(using: .utf8)!)
+        completionHandler(anchor)
     }
 }

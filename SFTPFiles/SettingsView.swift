@@ -74,161 +74,10 @@ enum BatteryImpact {
     }
 }
 
-// MARK: - Missing PollingIntervalPickerView
-struct PollingIntervalPickerView: View {
-    let selectedInterval: PollingInterval
-    let onIntervalSelected: (PollingInterval) -> Void
-    @Environment(\.presentationMode) var presentationMode
-    
-    var body: some View {
-        NavigationView {
-            ZStack {
-                // Background consistent with main view
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color(.systemBackground),
-                        Color(.systemBackground).opacity(0.95),
-                        Color.accentColor.opacity(0.03)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 16) {
-                        // Header
-                        VStack(alignment: .leading, spacing: 16) {
-                            HStack {
-                                Image(systemName: "clock.arrow.circlepath")
-                                    .font(.title2)
-                                    .foregroundColor(.blue)
-                                    .frame(width: 32, height: 32)
-                                
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Check Frequency")
-                                        .font(.headline)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.primary)
-                                    
-                                    Text("How often to check connection status")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                                
-                                Spacer()
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.top, 8)
-                        }
-                        .padding(.vertical, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color(.systemBackground))
-                                .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 2)
-                        )
-                        .padding(.horizontal, 16)
-                        
-                        // Interval Options
-                        VStack(spacing: 12) {
-                            ForEach(PollingInterval.allCases) { interval in
-                                IntervalRow(
-                                    interval: interval,
-                                    isSelected: interval == selectedInterval,
-                                    onTap: {
-                                        onIntervalSelected(interval)
-                                    }
-                                )
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        
-                        // Bottom padding
-                        Color.clear.frame(height: 20)
-                    }
-                    .padding(.top, 16)
-                }
-            }
-            .navigationTitle("Check Frequency")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        presentationMode.wrappedValue.dismiss()
-                    }
-                    .fontWeight(.semibold)
-                }
-            }
-        }
-    }
-}
-
-struct IntervalRow: View {
-    let interval: PollingInterval
-    let isSelected: Bool
-    let onTap: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
-                // Battery Impact Icon
-                VStack(spacing: 4) {
-                    Image(systemName: interval.batteryImpact.iconName)
-                        .font(.title2)
-                        .foregroundColor(interval.batteryImpact.color)
-                        .frame(width: 32, height: 32)
-                    
-                    Text("Battery")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                
-                // Interval Info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(interval.displayName)
-                        .font(.body)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                    
-                    Text(interval.description)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.leading)
-                }
-                
-                Spacer()
-                
-                // Selection Indicator
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.accentColor)
-                } else {
-                    Image(systemName: "circle")
-                        .font(.title2)
-                        .foregroundColor(.secondary.opacity(0.3))
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(.systemBackground))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
-                    )
-                    .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
-            )
-        }
-        .buttonStyle(BorderlessButtonStyle())
-    }
-}
-
+// MARK: - Simple Polling Settings View
 struct PollingSettingsView: View {
     @ObservedObject var pollingManager: ConnectionPollingManager
     @State private var showingIntervalPicker = false
-    @State private var isForceRefreshing = false
     
     private var currentInterval: PollingInterval {
         return PollingInterval(rawValue: pollingManager.pollingInterval) ?? .onceDaily
@@ -391,9 +240,7 @@ struct PollingSettingsView: View {
                                 .fontWeight(.medium)
                                 .foregroundColor(.primary)
                             
-                            Text(pollingManager.isNATSEnabled ? 
-                                 "Files sync handled by NATS" : 
-                                 "Refresh file listings during monitoring")
+                            Text("Refresh file listings during monitoring")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
@@ -405,8 +252,6 @@ struct PollingSettingsView: View {
                             set: { pollingManager.toggleFilesSync($0) }
                         ))
                         .labelsHidden()
-                        .disabled(pollingManager.isNATSEnabled)
-                        .opacity(pollingManager.isNATSEnabled ? 0.5 : 1.0)
                     }
                     .padding(.horizontal, 20)
                     
@@ -425,60 +270,25 @@ struct PollingSettingsView: View {
                                 .foregroundColor(.primary)
                         }
                         
-                        // Manual sync buttons
-                        HStack(spacing: 12) {
-                            Button(action: { pollingManager.manualSync() }) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "arrow.clockwise")
-                                        .font(.system(size: 14, weight: .medium))
-                                    
-                                    Text("Check Now")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                }
-                                .foregroundColor(.accentColor)
-                            }
-                            
-                            Spacer()
-                            
-                            Button(action: { forceRefreshAll() }) {
-                                HStack(spacing: 8) {
-                                    if isForceRefreshing {
-                                        ProgressView()
-                                            .scaleEffect(0.8)
-                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    } else {
-                                        Image(systemName: "arrow.triangle.2.circlepath")
-                                            .font(.system(size: 14, weight: .medium))
-                                    }
-                                    
-                                    Text(isForceRefreshing ? "Refreshing..." : "Force Refresh")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(isForceRefreshing ? Color.blue.opacity(0.5) : Color.blue)
-                                )
-                            }
-                            .disabled(isForceRefreshing)
-                        }
-                        
-                        // Force refresh explanation
-                        if isForceRefreshing {
+                        // Manual sync button
+                        Button(action: { pollingManager.manualSync() }) {
                             HStack(spacing: 8) {
-                                Image(systemName: "info.circle")
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 14, weight: .medium))
                                 
-                                Text("Force refresh disconnects and reconnects all domains to clear cached data")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                Text("Check Now")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
                             }
+                            .foregroundColor(.accentColor)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.accentColor.opacity(0.1))
+                            )
                         }
+                        .buttonStyle(BorderlessButtonStyle())
                     }
                     .padding(.horizontal, 20)
                 }
@@ -500,21 +310,160 @@ struct PollingSettingsView: View {
             )
         }
     }
+}
+
+// MARK: - Polling Interval Picker View
+struct PollingIntervalPickerView: View {
+    let selectedInterval: PollingInterval
+    let onIntervalSelected: (PollingInterval) -> Void
+    @Environment(\.presentationMode) var presentationMode
     
-    private func forceRefreshAll() {
-        isForceRefreshing = true
-        
-        NSLog("SFTPFiles: Force refresh initiated from settings")
-        pollingManager.forceRefreshAllConnections()
-        
-        // Reset the state after a delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            isForceRefreshing = false
+    var body: some View {
+        NavigationView {
+            ZStack {
+                // Background consistent with main view
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(.systemBackground),
+                        Color(.systemBackground).opacity(0.95),
+                        Color.accentColor.opacity(0.03)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // Header
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.title2)
+                                    .foregroundColor(.blue)
+                                    .frame(width: 32, height: 32)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Check Frequency")
+                                        .font(.headline)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.primary)
+                                    
+                                    Text("How often to check connection status")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Spacer()
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.top, 8)
+                        }
+                        .padding(.vertical, 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color(.systemBackground))
+                                .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 2)
+                        )
+                        .padding(.horizontal, 16)
+                        
+                        // Interval Options
+                        VStack(spacing: 12) {
+                            ForEach(PollingInterval.allCases) { interval in
+                                IntervalRow(
+                                    interval: interval,
+                                    isSelected: interval == selectedInterval,
+                                    onTap: {
+                                        onIntervalSelected(interval)
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        
+                        // Bottom padding
+                        Color.clear.frame(height: 20)
+                    }
+                    .padding(.top, 16)
+                }
+            }
+            .navigationTitle("Check Frequency")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
         }
     }
 }
 
-// Enhanced Settings View - This replaces your existing SettingsView
+struct IntervalRow: View {
+    let interval: PollingInterval
+    let isSelected: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                // Battery Impact Icon
+                VStack(spacing: 4) {
+                    Image(systemName: interval.batteryImpact.iconName)
+                        .font(.title2)
+                        .foregroundColor(interval.batteryImpact.color)
+                        .frame(width: 32, height: 32)
+                    
+                    Text("Battery")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                
+                // Interval Info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(interval.displayName)
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text(interval.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+                
+                Spacer()
+                
+                // Selection Indicator
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.accentColor)
+                } else {
+                    Image(systemName: "circle")
+                        .font(.title2)
+                        .foregroundColor(.secondary.opacity(0.3))
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.systemBackground))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                    )
+                    .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+            )
+        }
+        .buttonStyle(BorderlessButtonStyle())
+    }
+}
+
+// Enhanced Settings View
 struct EnhancedSettingsView: View {
     @ObservedObject var viewModel: SFTPConnectionViewModel
     @Environment(\.presentationMode) var presentationMode
@@ -655,7 +604,7 @@ struct EnhancedSettingsView: View {
                         )
                         .padding(.horizontal, 16)
                         
-                        // Enhanced Polling Settings Section
+                        // Polling Settings Section
                         PollingSettingsView(pollingManager: viewModel.pollingManager)
                             .padding(.horizontal, 16)
                         
@@ -740,65 +689,6 @@ struct EnhancedSettingsView: View {
                                 .buttonStyle(BorderlessButtonStyle())
                                 .padding(.horizontal, 20)
                             }
-                        }
-                        .padding(.vertical, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color(.systemBackground))
-                                .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 2)
-                        )
-                        .padding(.horizontal, 16)
-                        
-                        // Help Section
-                        VStack(alignment: .leading, spacing: 16) {
-                            HStack {
-                                Image(systemName: "questionmark.circle")
-                                    .font(.title2)
-                                    .foregroundColor(.accentColor)
-                                    .frame(width: 32, height: 32)
-                                
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Help & Support")
-                                        .font(.headline)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.primary)
-                                    
-                                    Text("Tips for using SFTPFiles")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                                
-                                Spacer()
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.top, 8)
-                            
-                            VStack(alignment: .leading, spacing: 12) {
-                                InfoRow(
-                                    icon: "folder.badge.plus",
-                                    title: "Finding Your Connections",
-                                    description: "Look for your SFTP servers under 'Locations' in the Files app"
-                                )
-                                
-                                InfoRow(
-                                    icon: "wifi.exclamationmark",
-                                    title: "Connection Issues",
-                                    description: "Make sure your server is reachable and credentials are correct"
-                                )
-                                
-                                InfoRow(
-                                    icon: "arrow.clockwise",
-                                    title: "Refresh Connections",
-                                    description: "Pull down to refresh file listings in the Files app"
-                                )
-                                
-                                InfoRow(
-                                    icon: "battery.100",
-                                    title: "Battery Optimization",
-                                    description: "Use longer check intervals for better battery life"
-                                )
-                            }
-                            .padding(.horizontal, 20)
                         }
                         .padding(.vertical, 16)
                         .background(
