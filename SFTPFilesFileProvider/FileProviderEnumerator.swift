@@ -43,6 +43,8 @@ class SFTPFileProviderEnumerator: NSObject, NSFileProviderEnumerator {
     func enumerateItems(for observer: NSFileProviderEnumerationObserver, startingAt page: NSFileProviderPage) {
         let path = pathForContainer(containerIdentifier)
         
+        NSLog("SFTPFiles: Enumerating items for path: '\(path)'")
+        
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try self.ensureConnection()
@@ -53,11 +55,14 @@ class SFTPFileProviderEnumerator: NSObject, NSFileProviderEnumerator {
                     return SFTPFileProviderItem(fileInfo: item, path: itemPath)
                 }
                 
+                NSLog("SFTPFiles: Enumerated \(providerItems.count) items for path: '\(path)'")
+                
                 DispatchQueue.main.async {
                     observer.didEnumerate(providerItems)
                     observer.finishEnumerating(upTo: nil)
                 }
             } catch {
+                NSLog("SFTPFiles: Enumeration failed for path '\(path)': \(error)")
                 DispatchQueue.main.async {
                     observer.finishEnumeratingWithError(NSFileProviderError(.serverUnreachable))
                 }
@@ -66,9 +71,15 @@ class SFTPFileProviderEnumerator: NSObject, NSFileProviderEnumerator {
     }
     
     func enumerateChanges(for observer: NSFileProviderChangeObserver, from syncAnchor: NSFileProviderSyncAnchor) {
-        // Simple implementation - report no changes for now
+        NSLog("SFTPFiles: Enumerating changes from sync anchor")
+        
+        // For SFTP, we don't have incremental change tracking
+        // Signal that we need a full re-enumeration for sync
         let currentAnchor = NSFileProviderSyncAnchor("anchor_\(Date().timeIntervalSince1970)".data(using: .utf8)!)
-        observer.finishEnumeratingChanges(upTo: currentAnchor, moreComing: false)
+        
+        DispatchQueue.main.async {
+            observer.finishEnumeratingChanges(upTo: currentAnchor, moreComing: false)
+        }
     }
     
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {

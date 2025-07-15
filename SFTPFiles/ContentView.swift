@@ -6,10 +6,13 @@ import UIKit
 
 // MARK: - Polling Manager
 class ConnectionPollingManager: ObservableObject {
-    @Published var pollingInterval: TimeInterval = 30.0
+    @Published var pollingInterval: TimeInterval = 86400.0  // Default to once daily
     @Published var isPollingEnabled: Bool = true
+    @Published var isFilesSyncEnabled: Bool = true
     @Published var backgroundRefreshStatus: UIBackgroundRefreshStatus = .available
     @Published var showBackgroundRefreshAlert: Bool = false
+    @Published var isNATSEnabled: Bool = false
+    @Published var lastSyncDate: Date?
     
     private var timer: Timer?
     private weak var viewModel: SFTPConnectionViewModel?
@@ -32,10 +35,14 @@ class ConnectionPollingManager: ObservableObject {
     func startPolling() {
         stopPolling()
         guard isPollingEnabled else { return }
+        
+        NSLog("SFTPFiles: Starting polling with interval: \(pollingInterval) seconds")
+        
         timer = Timer.scheduledTimer(withTimeInterval: pollingInterval, repeats: true) { [weak self] _ in
-            self?.checkAllConnections()
+            self?.performPollingCycle()
         }
-        checkAllConnections()
+        
+        performPollingCycle()
         scheduleBackgroundRefresh()
     }
     
@@ -49,7 +56,6 @@ class ConnectionPollingManager: ObservableObject {
         pollingInterval = interval
         saveSettings()
         startPolling()
-        scheduleBackgroundRefresh()
     }
     
     func togglePolling(_ enabled: Bool) {
@@ -60,24 +66,46 @@ class ConnectionPollingManager: ObservableObject {
         } else {
             stopPolling()
         }
-        if enabled {
-            scheduleBackgroundRefresh()
-        } else {
-            cancelBackgroundRefresh()
-        }
     }
     
-    private func checkAllConnections() {
-        guard let viewModel = viewModel else { return }
+    func toggleFilesSync(_ enabled: Bool) {
+        isFilesSyncEnabled = enabled
+        saveSettings()
+    }
+    
+    func manualSync() {
+        NSLog("SFTPFiles: Manual sync initiated")
+        performPollingCycle()
+    }
+    
+    private func performPollingCycle() {
+        guard let viewModel = self.viewModel else { return }
         
+        NSLog("SFTPFiles: Starting polling cycle")
+        lastSyncDate = Date()
+        
+        let group = DispatchGroup()
+        
+        // Check all enabled connections
         for connection in viewModel.connections {
             if connection.isPollingEnabled {
-                checkConnection(connection)
+                group.enter()
+                checkConnection(connection) {
+                    group.leave()
+                }
             }
+        }
+        
+        // After connection checks, sync Files app if enabled and not using NATS
+        group.notify(queue: .main) {
+            if self.isFilesSyncEnabled && !self.isNATSEnabled {
+                self.syncFilesApp()
+            }
+            NSLog("SFTPFiles: Polling cycle completed")
         }
     }
     
-    func checkConnection(_ connection: SFTPConnection) {
+    func checkConnection(_ connection: SFTPConnection, completion: @escaping () -> Void) {
         viewModel?.updateStatus(for: connection, status: .checking)
         viewModel?.testConnection(connection) { [weak self] status in
             let detailedStatus: ConnectionStatus
@@ -91,18 +119,54 @@ class ConnectionPollingManager: ObservableObject {
             }
             self?.viewModel?.updateStatus(for: connection, status: detailedStatus)
             self?.viewModel?.updateLastChecked(for: connection)
+            completion()
+        }
+    }
+    
+    private func syncFilesApp() {
+        guard let viewModel = self.viewModel else { return }
+        
+        NSLog("SFTPFiles: Starting Files app sync")
+        
+        for connection in viewModel.connections {
+            let domainIdentifier = NSFileProviderDomainIdentifier(rawValue: connection.id.uuidString)
+            
+            // Get all domains and find the matching one
+            NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
+                guard error == nil else {
+                    NSLog("SFTPFiles: Failed to get domains: \(error!.localizedDescription)")
+                    return
+                }
+                
+                // Find the domain that matches our connection
+                if let domain = domains.first(where: { $0.identifier == domainIdentifier }) {
+                    NSFileProviderManager(for: domain)?.signalEnumerator(for: .rootContainer) { error in
+                        if let error = error {
+                            NSLog("SFTPFiles: Failed to signal enumerator for \(connection.name): \(error.localizedDescription)")
+                        } else {
+                            NSLog("SFTPFiles: Successfully signaled enumerator for \(connection.name)")
+                        }
+                    }
+                } else {
+                    NSLog("SFTPFiles: Domain not found for connection: \(connection.name)")
+                }
+            }
         }
     }
     
     private func loadSettings() {
         if let defaults = UserDefaults(suiteName: appGroupID) {
-            pollingInterval = defaults.double(forKey: "pollingInterval")
-            if pollingInterval == 0 {
-                pollingInterval = 30.0
+            let intervalValue = defaults.double(forKey: "pollingInterval")
+            if intervalValue > 0 {
+                pollingInterval = intervalValue
             }
-            isPollingEnabled = defaults.bool(forKey: "isPollingEnabled")
-            if defaults.object(forKey: "isPollingEnabled") == nil {
-                isPollingEnabled = true
+            
+            isPollingEnabled = defaults.object(forKey: "isPollingEnabled") == nil ? true : defaults.bool(forKey: "isPollingEnabled")
+            isFilesSyncEnabled = defaults.object(forKey: "isFilesSyncEnabled") == nil ? true : defaults.bool(forKey: "isFilesSyncEnabled")
+            isNATSEnabled = defaults.bool(forKey: "isNATSEnabled")
+            
+            if let lastSyncData = defaults.object(forKey: "lastSyncDate") as? Date {
+                lastSyncDate = lastSyncData
             }
         }
     }
@@ -111,13 +175,21 @@ class ConnectionPollingManager: ObservableObject {
         if let defaults = UserDefaults(suiteName: appGroupID) {
             defaults.set(pollingInterval, forKey: "pollingInterval")
             defaults.set(isPollingEnabled, forKey: "isPollingEnabled")
+            defaults.set(isFilesSyncEnabled, forKey: "isFilesSyncEnabled")
+            defaults.set(isNATSEnabled, forKey: "isNATSEnabled")
+            
+            if let lastSync = lastSyncDate {
+                defaults.set(lastSync, forKey: "lastSyncDate")
+            }
+            
+            defaults.synchronize()
         }
     }
     
     func checkBackgroundRefreshStatus() {
-        self.backgroundRefreshStatus = UIApplication.shared.backgroundRefreshStatus
-        if self.backgroundRefreshStatus != .available && self.isPollingEnabled {
-            self.showBackgroundRefreshAlert = true
+        backgroundRefreshStatus = UIApplication.shared.backgroundRefreshStatus
+        if backgroundRefreshStatus != .available && isPollingEnabled {
+            showBackgroundRefreshAlert = true
         }
     }
     
@@ -135,7 +207,7 @@ class ConnectionPollingManager: ObservableObject {
         checkBackgroundRefreshStatus()
         
         if backgroundRefreshStatus != .available && isPollingEnabled {
-            print("Background App Refresh is disabled - connection monitoring will not work in background")
+            NSLog("SFTPFiles: Background App Refresh is disabled - connection monitoring will not work in background")
             showBackgroundRefreshAlert = true
         }
     }
@@ -144,21 +216,38 @@ class ConnectionPollingManager: ObservableObject {
         guard isPollingEnabled else { return }
         
         guard backgroundRefreshStatus == .available else {
-            print("Background App Refresh is disabled - cannot schedule background tasks")
+            NSLog("SFTPFiles: Background App Refresh is disabled - cannot schedule background tasks")
             return
         }
         
         let request = BGAppRefreshTaskRequest(identifier: bgTaskIdentifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: pollingInterval)
+        
         do {
             try BGTaskScheduler.shared.submit(request)
+            NSLog("SFTPFiles: Background refresh scheduled for \(pollingInterval) seconds")
         } catch {
-            print("Failed to schedule background refresh: \(error)")
+            NSLog("SFTPFiles: Failed to schedule background refresh: \(error)")
         }
     }
-
+    
     private func cancelBackgroundRefresh() {
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: bgTaskIdentifier)
+    }
+    
+    func enableNATS(_ enabled: Bool) {
+        isNATSEnabled = enabled
+        saveSettings()
+        
+        if enabled {
+            NSLog("SFTPFiles: NATS enabled - Files sync will be handled by NATS")
+        } else {
+            NSLog("SFTPFiles: NATS disabled - Files sync will use polling")
+        }
+        
+        if isPollingEnabled {
+            startPolling()
+        }
     }
 }
 
@@ -508,13 +597,16 @@ struct ContentView: View {
                 AddEditConnectionView(viewModel: viewModel, connection: connection)
             }
             .sheet(isPresented: $showingSettings) {
-                SettingsView(viewModel: viewModel)
+                EnhancedSettingsView(viewModel: viewModel)
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
     }
     
     private func refreshAllConnections() {
+        NSLog("SFTPFiles: Manual refresh triggered")
+        
+        // Check if background refresh is available and disable polling for connections if not
         if viewModel.pollingManager.backgroundRefreshStatus != .available {
             for connection in viewModel.connections {
                 if connection.isPollingEnabled {
@@ -522,22 +614,9 @@ struct ContentView: View {
                 }
             }
         }
-        for connection in viewModel.connections {
-            viewModel.updateStatus(for: connection, status: .checking)
-            viewModel.testConnection(connection) { status in
-                let mappedStatus: ConnectionStatus
-                switch status {
-                case .valid:
-                    mappedStatus = .connected
-                case .invalid:
-                    mappedStatus = .error
-                default:
-                    mappedStatus = status
-                }
-                viewModel.updateStatus(for: connection, status: mappedStatus)
-                viewModel.updateLastChecked(for: connection)
-            }
-        }
+        
+        // Use the polling manager's manual sync
+        viewModel.pollingManager.manualSync()
     }
 }
 

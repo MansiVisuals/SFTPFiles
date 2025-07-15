@@ -7,26 +7,43 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     private var connection: SFTPConnection?
     private var sftp: MFTSftpConnection?
     private let downloadManager = DownloadManager()
+    private var lastSyncAnchor: NSFileProviderSyncAnchor?
     
     required init(domain: NSFileProviderDomain) {
         self.domain = domain
         super.init()
         setupConnection()
         downloadManager.cleanupOrphanedDownloads()
+        loadLastSyncAnchor()
     }
     
     private func setupConnection() {
         let connections = SFTPConnectionStore.loadConnections()
         connection = connections.first { $0.id.uuidString == domain.identifier.rawValue }
         
-        // Debug logging for connection setup
         if let conn = connection {
             NSLog("SFTPFiles: Setup connection - Host: \(conn.host), Remote Path: '\(conn.remotePath)'")
         }
     }
     
+    private func loadLastSyncAnchor() {
+        let defaults = UserDefaults(suiteName: "group.mansivisuals.SFTPFiles")
+        let key = "lastSyncAnchor_\(domain.identifier.rawValue)"
+        
+        if let data = defaults?.data(forKey: key) {
+            lastSyncAnchor = NSFileProviderSyncAnchor(data)
+        }
+    }
+    
+    private func saveLastSyncAnchor(_ anchor: NSFileProviderSyncAnchor) {
+        let defaults = UserDefaults(suiteName: "group.mansivisuals.SFTPFiles")
+        let key = "lastSyncAnchor_\(domain.identifier.rawValue)"
+        defaults?.set(anchor.rawValue, forKey: key)
+        defaults?.synchronize()
+        lastSyncAnchor = anchor
+    }
+    
     private func normalizedPath(_ path: String) -> String {
-        // Remove leading/trailing slashes and normalize
         let trimmed = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return trimmed.isEmpty ? "/" : "/\(trimmed)"
     }
@@ -49,7 +66,6 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             do {
                 if attempt > 0 {
                     NSLog("SFTPFiles: Retry attempt \(attempt)")
-                    // Force reconnection on retry
                     sftp?.disconnect()
                     sftp = nil
                 }
@@ -64,7 +80,6 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                     break
                 }
                 
-                // Brief delay before retry
                 Thread.sleep(forTimeInterval: 0.5)
             }
         }
@@ -82,7 +97,6 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             throw NSFileProviderError(.notAuthenticated)
         }
         
-        // Try to reconnect if connection is lost
         if let sftp = sftp, !sftp.connected {
             NSLog("SFTPFiles: Connection lost, attempting to reconnect...")
             sftp.disconnect()
@@ -109,7 +123,7 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         }
     }
     
-    // MARK: - Enumeration
+    // MARK: - Enumeration with Sync Support
     
     func enumerator(for containerItemIdentifier: NSFileProviderItemIdentifier, request: NSFileProviderRequest) throws -> NSFileProviderEnumerator {
         guard let connection = connection else {
@@ -175,29 +189,20 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             do {
                 try self.ensureConnection()
                 
-                // Debug logging
                 NSLog("SFTPFiles: fetchContents for path: \(itemIdentifier.rawValue)")
                 
-                // Get the file info first to get the actual filename
                 let fileInfo = try self.sftp!.infoForFile(atPath: itemIdentifier.rawValue)
-                
-                // CRITICAL: Always use ONLY the server's filename, never any path components
                 let serverFilename = fileInfo.filename
-                
-                // Additional safety: Strip any path components that might be in the filename itself
                 let cleanFilename = serverFilename.components(separatedBy: "/").last ?? serverFilename
                 
-                // Debug logging
                 NSLog("SFTPFiles: Server filename: '\(serverFilename)'")
                 NSLog("SFTPFiles: Clean filename: '\(cleanFilename)'")
                 NSLog("SFTPFiles: Full server path: '\(itemIdentifier.rawValue)'")
                 
-                // Create a unique temporary directory for this download to avoid conflicts
                 let downloadID = UUID().uuidString
                 let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("SFTPDownloads").appendingPathComponent(downloadID)
                 try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true, attributes: nil)
                 
-                // Use ONLY the clean filename for the local file
                 let tempURL = tempDir.appendingPathComponent(cleanFilename)
                 
                 NSLog("SFTPFiles: Creating temp file at: \(tempURL.path)")
@@ -222,7 +227,6 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 
                 NSLog("SFTPFiles: Item filename property: '\(item.filename)'")
                 
-                // Register download with manager
                 self.downloadManager.registerDownload(for: itemIdentifier, at: tempURL)
                 
                 DispatchQueue.main.async {
@@ -243,7 +247,6 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     func createItem(basedOn itemTemplate: NSFileProviderItem, fields: NSFileProviderItemFields, contents: URL?, options: NSFileProviderCreateItemOptions, request: NSFileProviderRequest, completionHandler: @escaping (NSFileProviderItem?, NSFileProviderItemFields, Bool, Error?) -> Void) -> Progress {
         let progress = Progress(totalUnitCount: 100)
         
-        // Construct the full path where the new item should be created
         let parentPath: String
         if itemTemplate.parentItemIdentifier == .rootContainer {
             parentPath = connection?.remotePath ?? "/"
@@ -268,7 +271,6 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 } else if let contents = contents {
                     NSLog("SFTPFiles: Uploading file to: '\(newPath)'")
                     
-                    // Get file size for progress tracking
                     let attributes = try FileManager.default.attributesOfItem(atPath: contents.path)
                     let fileSize = attributes[.size] as? Int64 ?? 0
                     progress.totalUnitCount = max(fileSize, 100)
@@ -289,7 +291,6 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                     NSLog("SFTPFiles: Upload completed - \(uploadedBytes) bytes")
                 }
                 
-                // Get the created item info from server
                 let fileInfo = try self.sftp!.infoForFile(atPath: newPath)
                 let item = SFTPFileProviderItem(
                     fileInfo: fileInfo, 
@@ -298,6 +299,9 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 )
                 
                 NSLog("SFTPFiles: Item created successfully - Name: '\(item.filename)', Path: '\(newPath)'")
+                
+                // Signal that the container has changed for sync
+                self.signalEnumeratorForContainer(parentPath)
                 
                 DispatchQueue.main.async {
                     progress.completedUnitCount = progress.totalUnitCount
@@ -322,14 +326,18 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 try self.ensureConnection()
                 
                 let fileInfo = try self.sftp!.infoForFile(atPath: identifier.rawValue)
+                let parentPath = (identifier.rawValue as NSString).deletingLastPathComponent
+                
                 if fileInfo.isDirectory {
                     try self.sftp!.removeDirectory(atPath: identifier.rawValue)
                 } else {
                     try self.sftp!.removeFile(atPath: identifier.rawValue)
                 }
                 
-                // Clean up any local downloads
                 self.downloadManager.removeDownload(for: identifier)
+                
+                // Signal that the parent container has changed
+                self.signalEnumeratorForContainer(parentPath)
                 
                 DispatchQueue.main.async {
                     progress.completedUnitCount = 1
@@ -359,14 +367,12 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 var itemMoved = false
                 var progressCompleted: Int64 = 0
                 
-                // Handle content changes first (before any potential move)
                 if changedFields.contains(.contents), let contents = contents {
                     NSLog("SFTPFiles: Updating file contents at: '\(originalPath)'")
                     
-                    // Get file size for progress tracking
                     let attributes = try FileManager.default.attributesOfItem(atPath: contents.path)
                     let fileSize = attributes[.size] as? Int64 ?? 0
-                    progress.totalUnitCount = fileSize + 10 // +10 for potential move operation
+                    progress.totalUnitCount = fileSize + 10
                     
                     var uploadedBytes: Int64 = 0
                     let inputStream = InputStream(url: contents)!
@@ -383,7 +389,6 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                     NSLog("SFTPFiles: Content update completed - \(uploadedBytes) bytes")
                 }
                 
-                // Handle rename/move operations
                 if changedFields.contains(.filename) || changedFields.contains(.parentItemIdentifier) {
                     let newParentPath: String
                     if item.parentItemIdentifier == .rootContainer {
@@ -396,25 +401,25 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                     
                     NSLog("SFTPFiles: Moving/renaming - From: '\(originalPath)' To: '\(newPath)'")
                     
-                    // Only move if the path actually changed
                     if newPath != originalPath {
-                        // Verify the source file exists before attempting move
                         let _ = try self.sftp!.infoForFile(atPath: originalPath)
                         
-                        // Perform the move/rename
                         try self.sftp!.moveItem(atPath: originalPath, toPath: newPath)
                         finalPath = newPath
                         itemMoved = true
                         
-                        // Update download manager with new path
                         self.downloadManager.updatePath(from: NSFileProviderItemIdentifier(originalPath), 
                                                        to: NSFileProviderItemIdentifier(finalPath))
+                        
+                        // Signal both old and new parent containers
+                        let oldParentPath = (originalPath as NSString).deletingLastPathComponent
+                        self.signalEnumeratorForContainer(oldParentPath)
+                        self.signalEnumeratorForContainer(newParentPath)
                         
                         NSLog("SFTPFiles: Move/rename completed successfully")
                     }
                 }
                 
-                // Get updated file info from the final path
                 let fileInfo = try self.sftp!.infoForFile(atPath: finalPath)
                 let updatedItem = SFTPFileProviderItem(
                     fileInfo: fileInfo, 
@@ -431,7 +436,6 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             } catch {
                 NSLog("SFTPFiles: Modify item error: \(error)")
                 DispatchQueue.main.async {
-                    // Try to provide more specific error information
                     let providerError: NSFileProviderError
                     if error.localizedDescription.contains("not found") || error.localizedDescription.contains("No such file") {
                         providerError = NSFileProviderError(.noSuchItem)
@@ -462,6 +466,38 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         
         return progress
     }
+    
+    // MARK: - Sync Support
+    
+private func signalEnumeratorForContainer(_ containerPath: String) {
+    let containerIdentifier: NSFileProviderItemIdentifier
+    
+    if containerPath.isEmpty || containerPath == "/" || containerPath == connection?.remotePath {
+        containerIdentifier = .rootContainer
+    } else {
+        containerIdentifier = NSFileProviderItemIdentifier(containerPath)
+    }
+    
+    // Use the domain directly since we already have it
+    NSFileProviderManager(for: domain)?.signalEnumerator(for: containerIdentifier) { error in
+        if let error = error {
+            NSLog("SFTPFiles: Failed to signal enumerator for container \(containerPath): \(error.localizedDescription)")
+        } else {
+            NSLog("SFTPFiles: Successfully signaled enumerator for container: \(containerPath)")
+        }
+        }
+    }
+    
+    // MARK: - Public sync methods for polling manager
+    
+    func triggerSync() {
+        NSLog("SFTPFiles: Sync triggered by polling manager")
+        signalEnumeratorForContainer(connection?.remotePath ?? "/")
+        
+        // Update sync anchor
+        let newAnchor = NSFileProviderSyncAnchor("sync_\(Date().timeIntervalSince1970)".data(using: .utf8)!)
+        saveLastSyncAnchor(newAnchor)
+    }
 }
 
 // MARK: - Download Manager
@@ -479,7 +515,6 @@ class DownloadManager {
     func removeDownload(for identifier: NSFileProviderItemIdentifier) {
         queue.async(flags: .barrier) {
             if let url = self.downloads[identifier] {
-                // Remove the entire download directory (including the unique subdirectory)
                 let downloadDir = url.deletingLastPathComponent()
                 try? FileManager.default.removeItem(at: downloadDir)
                 self.downloads.removeValue(forKey: identifier)
@@ -511,12 +546,9 @@ class DownloadManager {
         }
     }
     
-    // Clean up orphaned downloads on startup
     func cleanupOrphanedDownloads() {
         queue.async(flags: .barrier) {
             let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("SFTPDownloads")
-            
-            // Remove any existing downloads directory on startup to clean up orphaned files
             try? FileManager.default.removeItem(at: tempDir)
         }
     }
