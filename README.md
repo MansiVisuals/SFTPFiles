@@ -74,12 +74,6 @@ SFTPFiles is a native iOS app and File Provider extension that lets users connec
 - File preview and offline caching
 - Favorites, recent files, and multi-server improvements
 
-## Setup Requirements
-
-1. **App Groups**: Configure your own App Group identifier (e.g., `group.yourteam.SFTPFiles`) for all targets. The example `group.mansivisuals.SFTPFiles` should be replaced with your own unique identifier.
-2. **MFT Framework**: Add `MFT.xcframework` to your project
-3. **Entitlements**: Ensure entitlements for both app and extensions
-
 ## Usage
 
 1. Launch the app to manage SFTP connections
