@@ -2,6 +2,7 @@
 
 
 # SFTPFiles – iOS SFTP File Provider & Connection Manager
+# [![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/surebeat)
 
 ![Platform](https://img.shields.io/badge/platform-iOS-blue)
 ![Swift](https://img.shields.io/badge/language-Swift-orange)
