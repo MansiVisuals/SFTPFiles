@@ -19,7 +19,6 @@ SFTPFiles is a native iOS app and File Provider extension that lets users connec
 - [Architecture Overview](#architecture-overview)
 - [Data Sharing & Security](#data-sharing--security)
 - [Planned Enhancements](#planned-enhancements)
-- [Setup Requirements](#setup-requirements)
 - [Usage](#usage)
 - [File Operations](#file-operations)
 - [Technical Details](#technical-details)
@@ -77,7 +76,7 @@ SFTPFiles is a native iOS app and File Provider extension that lets users connec
 
 ## Setup Requirements
 
-1. **App Groups**: Configure `group.mansivisuals.SFTPFiles` for all targets
+1. **App Groups**: Configure your own App Group identifier (e.g., `group.yourteam.SFTPFiles`) for all targets. The example `group.mansivisuals.SFTPFiles` should be replaced with your own unique identifier.
 2. **MFT Framework**: Add `MFT.xcframework` to your project
 3. **Entitlements**: Ensure entitlements for both app and extensions
 
@@ -174,12 +173,6 @@ Special thanks to the maintainers and contributors of these projects for their w
 - Uses iOS App Groups for data sharing
 - Secure storage with UserDefaults suite
 - Automatic File Provider domain registration
-
-## Setup Requirements
-
-1. **App Groups**: Configure `group.mansivisuals.SFTPFiles` in both targets
-2. **MFT Framework**: Add the MFT.xcframework to your project
-3. **Entitlements**: Ensure proper entitlements are set for both targets
 
 ## Usage
 
