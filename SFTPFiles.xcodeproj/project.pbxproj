@@ -12,6 +12,7 @@
 		134E19252E230855001C4525 /* SFTPFilesFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 134E19092E230855001C4525 /* SFTPFilesFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		13C433202E22FA540068D960 /* mft.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 13C4331F2E22FA540068D960 /* mft.xcframework */; };
 		13C433212E22FA540068D960 /* mft.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 13C4331F2E22FA540068D960 /* mft.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		13DFC44D2E2678A100D85E88 /* Nats in Frameworks */ = {isa = PBXBuildFile; productRef = 13DFC44C2E2678A100D85E88 /* Nats */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -170,6 +171,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				13DFC44D2E2678A100D85E88 /* Nats in Frameworks */,
 				13C433202E22FA540068D960 /* mft.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -293,6 +295,7 @@
 			);
 			name = SFTPFiles;
 			packageProductDependencies = (
+				13DFC44C2E2678A100D85E88 /* Nats */,
 			);
 			productName = SFTPFiles;
 			productReference = 13C432D22E22F7530068D960 /* SFTPFiles.app */;
@@ -382,6 +385,9 @@
 			);
 			mainGroup = 13C432C92E22F7530068D960;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				13DFC44B2E2678A100D85E88 /* XCRemoteSwiftPackageReference "nats" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 13C432D32E22F7530068D960 /* Products */;
 			projectDirPath = "";
@@ -951,6 +957,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		13DFC44B2E2678A100D85E88 /* XCRemoteSwiftPackageReference "nats" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/nats-io/nats.swift";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		13DFC44C2E2678A100D85E88 /* Nats */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 13DFC44B2E2678A100D85E88 /* XCRemoteSwiftPackageReference "nats" */;
+			productName = Nats;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 13C432CA2E22F7530068D960 /* Project object */;
 }
