@@ -180,7 +180,7 @@ class ConnectionPollingManager: ObservableObject {
         }
     }
     
-    // Add force refresh method
+    // Add force refresh method (Fixed: Remove disconnect/reconnect calls)
     func forceRefreshAllConnections() {
         NSLog("SFTPFiles: Force refreshing all connections")
         
@@ -193,21 +193,20 @@ class ConnectionPollingManager: ObservableObject {
             for domain in domains {
                 let manager = NSFileProviderManager(for: domain)
                 
-                // Disconnect and reconnect the domain
-                manager?.disconnect(reason: "Force refresh") { error in
+                // Signal enumerators for refresh instead of disconnect/reconnect
+                manager?.signalEnumerator(for: .rootContainer) { error in
                     if let error = error {
-                        NSLog("SFTPFiles: Failed to disconnect domain \(domain.displayName): \(error.localizedDescription)")
+                        NSLog("SFTPFiles: Failed to signal root enumerator for \(domain.displayName): \(error.localizedDescription)")
                     } else {
-                        NSLog("SFTPFiles: Successfully disconnected domain \(domain.displayName)")
-                        
-                        // Immediately reconnect
-                        manager?.reconnect { error in
-                            if let error = error {
-                                NSLog("SFTPFiles: Failed to reconnect domain \(domain.displayName): \(error.localizedDescription)")
-                            } else {
-                                NSLog("SFTPFiles: Successfully reconnected domain \(domain.displayName)")
-                            }
-                        }
+                        NSLog("SFTPFiles: Successfully signaled root enumerator for \(domain.displayName)")
+                    }
+                }
+                
+                manager?.signalEnumerator(for: .workingSet) { error in
+                    if let error = error {
+                        NSLog("SFTPFiles: Failed to signal working set for \(domain.displayName): \(error.localizedDescription)")
+                    } else {
+                        NSLog("SFTPFiles: Successfully signaled working set for \(domain.displayName)")
                     }
                 }
             }
@@ -841,6 +840,28 @@ struct ConnectionRow: View {
         }
     }
     
+    // Fixed: Add missing statusColor computed property
+    private var statusColor: Color {
+        switch connection.status {
+        case .connected, .valid: return .green
+        case .disconnected, .invalid, .error: return .red
+        case .checking: return .blue
+        case .timeout: return .orange
+        case .unknown: return .gray
+        }
+    }
+    
+    // Fixed: Add missing statusIcon computed property
+    private var statusIcon: String {
+        switch connection.status {
+        case .connected, .valid: return "checkmark.circle.fill"
+        case .disconnected, .invalid, .error: return "xmark.octagon.fill"
+        case .checking: return "arrow.triangle.2.circlepath"
+        case .timeout: return "clock.badge.exclamationmark"
+        case .unknown: return "questionmark.circle"
+        }
+    }
+    
     private func refreshConnection() {
         NSLog("SFTPFiles: Refreshing individual connection: \(connection.name)")
         
@@ -863,23 +884,23 @@ struct ConnectionRow: View {
             if let domain = domains.first(where: { $0.identifier == domainIdentifier }) {
                 let manager = NSFileProviderManager(for: domain)
                 
-                // Force disconnect and reconnect to refresh
-                manager?.disconnect(reason: "Manual refresh") { error in
+                // Use signaling instead of disconnect/reconnect for iOS compatibility
+                manager?.signalEnumerator(for: .rootContainer) { error in
                     if let error = error {
-                        NSLog("SFTPFiles: Failed to disconnect for refresh: \(error.localizedDescription)")
+                        NSLog("SFTPFiles: Failed to signal root enumerator for refresh: \(error.localizedDescription)")
+                    } else {
+                        NSLog("SFTPFiles: Successfully refreshed connection: \(connection.name)")
                     }
-                    
-                    // Reconnect after brief delay
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        manager?.reconnect { error in
-                            if let error = error {
-                                NSLog("SFTPFiles: Failed to reconnect after refresh: \(error.localizedDescription)")
-                            } else {
-                                NSLog("SFTPFiles: Successfully refreshed connection: \(connection.name)")
-                            }
-                        }
+                }
+                
+                manager?.signalEnumerator(for: .workingSet) { error in
+                    if let error = error {
+                        NSLog("SFTPFiles: Failed to signal working set for refresh: \(error.localizedDescription)")
+                    } else {
+                        NSLog("SFTPFiles: Successfully signaled working set for refresh")
                     }
                 }
             }
         }
     }
+}

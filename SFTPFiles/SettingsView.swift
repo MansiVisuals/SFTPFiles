@@ -74,6 +74,157 @@ enum BatteryImpact {
     }
 }
 
+// MARK: - Missing PollingIntervalPickerView
+struct PollingIntervalPickerView: View {
+    let selectedInterval: PollingInterval
+    let onIntervalSelected: (PollingInterval) -> Void
+    @Environment(\.presentationMode) var presentationMode
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                // Background consistent with main view
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(.systemBackground),
+                        Color(.systemBackground).opacity(0.95),
+                        Color.accentColor.opacity(0.03)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // Header
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.title2)
+                                    .foregroundColor(.blue)
+                                    .frame(width: 32, height: 32)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Check Frequency")
+                                        .font(.headline)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.primary)
+                                    
+                                    Text("How often to check connection status")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Spacer()
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.top, 8)
+                        }
+                        .padding(.vertical, 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color(.systemBackground))
+                                .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 2)
+                        )
+                        .padding(.horizontal, 16)
+                        
+                        // Interval Options
+                        VStack(spacing: 12) {
+                            ForEach(PollingInterval.allCases) { interval in
+                                IntervalRow(
+                                    interval: interval,
+                                    isSelected: interval == selectedInterval,
+                                    onTap: {
+                                        onIntervalSelected(interval)
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        
+                        // Bottom padding
+                        Color.clear.frame(height: 20)
+                    }
+                    .padding(.top, 16)
+                }
+            }
+            .navigationTitle("Check Frequency")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+}
+
+struct IntervalRow: View {
+    let interval: PollingInterval
+    let isSelected: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                // Battery Impact Icon
+                VStack(spacing: 4) {
+                    Image(systemName: interval.batteryImpact.iconName)
+                        .font(.title2)
+                        .foregroundColor(interval.batteryImpact.color)
+                        .frame(width: 32, height: 32)
+                    
+                    Text("Battery")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                
+                // Interval Info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(interval.displayName)
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text(interval.description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+                
+                Spacer()
+                
+                // Selection Indicator
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.accentColor)
+                } else {
+                    Image(systemName: "circle")
+                        .font(.title2)
+                        .foregroundColor(.secondary.opacity(0.3))
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.systemBackground))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                    )
+                    .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 2)
+            )
+        }
+        .buttonStyle(BorderlessButtonStyle())
+    }
+}
+
 struct PollingSettingsView: View {
     @ObservedObject var pollingManager: ConnectionPollingManager
     @State private var showingIntervalPicker = false
