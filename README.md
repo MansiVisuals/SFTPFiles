@@ -105,14 +105,17 @@ SFTPFiles is a native iOS app and File Provider extension that lets users connec
 
 ## Acknowledgments
 
+
 SFTPFiles would not be possible without the following open source projects:
 
-- [SFTPGo](https://github.com/drakkan/sftpgo) – Powerful SFTP server used for testing and integration
 - [MFT](https://github.com/mplpl/mft) – Swift SFTP client library powering all SFTP operations
+- [SFTPGo](https://github.com/drakkan/sftpgo) – Powerful SFTP server used for testing and integration
 - [sftpgo-plugin-pubsub](https://github.com/sftpgo/sftpgo-plugin-pubsub) – NATS pub/sub plugin for SFTPGo
 - [nats.swift](https://github.com/nats-io/nats.swift) – Swift client for NATS messaging
 
 Special thanks to the maintainers and contributors of these projects for their work and support to the open source community.
+
+Thanks to [Claudio Cambra](https://claudiocambra.com/posts/build-file-provider-sync/) for his extensive guide on implementing FileProvider logic.
 
 ---
 
