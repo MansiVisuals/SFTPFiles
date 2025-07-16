@@ -42,6 +42,23 @@ struct SecondaryButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - SSH Key Manager View
+struct SSHKeyManagerView: View {
+    @ObservedObject var viewModel: SFTPConnectionViewModel
+    var body: some View {
+        VStack(spacing: 24) {
+            Text("SSH Key Manager")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+            Text("Manage your SSH keys here.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding()
+    }
+}
+
 // MARK: - Custom Input Field
 struct CustomInputField: View {
     let title: String

@@ -64,10 +64,11 @@ struct SFTPConnection: Identifiable, Codable, Equatable {
     var lastChecked: Date?
     var isNATSEnabled: Bool
     var natsConfig: NATSConfig?
+    var isPollingEnabled: Bool = false
     
     init(id: UUID = UUID(), name: String, host: String, port: Int? = nil, username: String, 
          authMethod: SFTPAuthMethod = .password, password: String = "", keyPairId: UUID? = nil,
-         remotePath: String = "/", isNATSEnabled: Bool = false, natsConfig: NATSConfig? = nil) {
+         remotePath: String = "/", isNATSEnabled: Bool = false, natsConfig: NATSConfig? = nil, isPollingEnabled: Bool = false) {
         self.id = id
         self.name = name
         self.host = host
@@ -80,6 +81,7 @@ struct SFTPConnection: Identifiable, Codable, Equatable {
         self.status = .unknown
         self.isNATSEnabled = isNATSEnabled
         self.natsConfig = natsConfig
+        self.isPollingEnabled = isPollingEnabled
     }
 }
 

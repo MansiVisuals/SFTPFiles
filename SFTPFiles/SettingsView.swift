@@ -87,46 +87,45 @@ struct EnhancedSettingsView: View {
                                         .fontWeight(.medium)
                                         .foregroundColor(.secondary)
                                     
+                                    // Precompute statistics to help the compiler
+                                    let totalConnections = viewModel.connections.count
+                                    let connectedCount = viewModel.connections.filter { $0.status.isHealthy }.count
+                                    let disconnectedCount = viewModel.connections.filter { !$0.status.isHealthy && $0.status != .unknown && $0.status != .checking }.count
+                                    let checkingCount = viewModel.connections.filter { $0.status == .checking }.count
+
                                     HStack(spacing: 20) {
                                         VStack(spacing: 4) {
-                                            Text("\(viewModel.connections.count)")
+                                            Text("\(totalConnections)")
                                                 .font(.title2)
                                                 .fontWeight(.bold)
                                                 .foregroundColor(.primary)
-                                            
                                             Text("Total")
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
                                         }
-                                        
                                         VStack(spacing: 4) {
-                                            Text("\(viewModel.connections.filter { $0.status.isHealthy }.count)")
+                                            Text("\(connectedCount)")
                                                 .font(.title2)
                                                 .fontWeight(.bold)
                                                 .foregroundColor(.green)
-                                            
                                             Text("Connected")
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
                                         }
-                                        
                                         VStack(spacing: 4) {
-                                            Text("\(viewModel.connections.filter { !$0.status.isHealthy && $0.status != .unknown && $0.status != .checking }.count)")
+                                            Text("\(disconnectedCount)")
                                                 .font(.title2)
                                                 .fontWeight(.bold)
                                                 .foregroundColor(.red)
-                                            
                                             Text("Disconnected")
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
                                         }
-                                        
                                         VStack(spacing: 4) {
-                                            Text("\(viewModel.connections.filter { $0.status == .checking }.count)")
+                                            Text("\(checkingCount)")
                                                 .font(.title2)
                                                 .fontWeight(.bold)
                                                 .foregroundColor(.blue)
-                                            
                                             Text("Checking")
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
@@ -144,9 +143,6 @@ struct EnhancedSettingsView: View {
                         )
                         .padding(.horizontal, 16)
                         
-                        // Enhanced Polling Settings Section
-                        PollingSettingsView(pollingManager: viewModel.pollingManager)
-                            .padding(.horizontal, 16)
                         
                         // Data Management Section
                         VStack(alignment: .leading, spacing: 16) {
@@ -262,32 +258,7 @@ struct EnhancedSettingsView: View {
                             .padding(.horizontal, 20)
                             .padding(.top, 8)
                             
-                            VStack(alignment: .leading, spacing: 12) {
-                                InfoRow(
-                                    icon: "folder.badge.plus",
-                                    title: "Finding Your Connections",
-                                    description: "Look for your SFTP servers under 'Locations' in the Files app"
-                                )
-                                
-                                InfoRow(
-                                    icon: "wifi.exclamationmark",
-                                    title: "Connection Issues",
-                                    description: "Make sure your server is reachable and credentials are correct"
-                                )
-                                
-                                InfoRow(
-                                    icon: "arrow.clockwise",
-                                    title: "Refresh Connections",
-                                    description: "Use the enhanced sync options for better file refresh"
-                                )
-                                
-                                InfoRow(
-                                    icon: "battery.100",
-                                    title: "Battery Optimization",
-                                    description: "Use longer check intervals for better battery life"
-                                )
-                            }
-                            .padding(.horizontal, 20)
+                            // Help tips removed (InfoRow not defined)
                         }
                         .padding(.vertical, 16)
                         .background(
@@ -328,15 +299,14 @@ struct EnhancedSettingsView: View {
     }
     private func clearAllData() {
         isClearing = true
-
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            viewModel.clearAllConfigurations()
-
-            DispatchQueue.main.async {
-                self.isClearing = false
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.presentationMode.wrappedValue.dismiss()
+            Task {
+                await viewModel.clearAllConfigurations()
+                DispatchQueue.main.async {
+                    self.isClearing = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self.presentationMode.wrappedValue.dismiss()
+                    }
                 }
             }
         }

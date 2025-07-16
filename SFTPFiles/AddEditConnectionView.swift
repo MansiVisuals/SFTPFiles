@@ -359,21 +359,39 @@ struct AddEditConnectionView: View {
     
     private var statusColor: Color {
         switch status {
-        case .connected, .valid: return .green
-        case .disconnected, .invalid, .error: return .red
-        case .checking: return .blue
-        case .timeout: return .orange
-        case .unknown: return .gray
+        case .connected, .valid:
+            return .green
+        case .disconnected, .invalid, .error:
+            return .red
+        case .checking, .connecting:
+            return .blue
+        case .timeout:
+            return .orange
+        case .unknown:
+            return .gray
+        case .authFailed:
+            return .purple
+        case .syncError:
+            return .yellow
         }
     }
     
     private var statusIcon: String {
         switch status {
-        case .connected, .valid: return "checkmark.circle.fill"
-        case .disconnected, .invalid, .error: return "xmark.octagon.fill"
-        case .checking: return "arrow.triangle.2.circlepath"
-        case .timeout: return "clock.badge.exclamationmark"
-        case .unknown: return "questionmark.circle"
+        case .connected, .valid:
+            return "checkmark.circle.fill"
+        case .disconnected, .invalid, .error:
+            return "xmark.octagon.fill"
+        case .checking, .connecting:
+            return "arrow.triangle.2.circlepath"
+        case .timeout:
+            return "clock.badge.exclamationmark"
+        case .unknown:
+            return "questionmark.circle"
+        case .authFailed:
+            return "lock.slash"
+        case .syncError:
+            return "exclamationmark.arrow.triangle.2.circlepath"
         }
     }
     
@@ -404,8 +422,12 @@ struct AddEditConnectionView: View {
                 alertMessage = "Connection timed out. Please check your server address and try again."
             case .unknown:
                 alertMessage = "Unknown error occurred during connection test."
-            case .checking:
-                alertMessage = "Still checking connection..."
+            case .checking, .connecting:
+                alertMessage = "Checking connection..."
+            case .authFailed:
+                alertMessage = "Authentication failed. Please check your credentials."
+            case .syncError:
+                alertMessage = "Sync error occurred during connection test."
             }
             showingAlert = true
         }

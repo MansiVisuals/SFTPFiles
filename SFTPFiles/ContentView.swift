@@ -19,6 +19,7 @@ class SFTPConnectionViewModel: ObservableObject {
     @Published var syncStatus: SyncStatus = .idle
     @Published var natsConnectionStatus: NATSConnectionStatus = .disconnected
     @Published var lastSyncDate: Date?
+    @Published var pollingManager: PollingManager!
 
     // ...existing code...
     
@@ -32,6 +33,7 @@ class SFTPConnectionViewModel: ObservableObject {
         loadConnections()
         setupSyncManager()
         setupNATSConnections()
+        pollingManager = PollingManager(viewModel: self)
     }
     
     private func setupSyncManager() {
@@ -450,12 +452,12 @@ struct FoldableConnectionRow: View {
                             .font(.subheadline)
                             .foregroundColor(.primary)
                     }
-                    if let remotePath = connection.remotePath, !remotePath.isEmpty {
+                    if !connection.remotePath.isEmpty {
                         HStack {
                             Text("Remote Path:")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
-                            Text(remotePath)
+                            Text(connection.remotePath)
                                 .font(.subheadline)
                                 .foregroundColor(.primary)
                         }
