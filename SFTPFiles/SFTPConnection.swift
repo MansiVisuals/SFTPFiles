@@ -1,50 +1,114 @@
 import Foundation
 
+// MARK: - Enhanced Authentication Methods
+enum SFTPAuthMethod: String, Codable, CaseIterable {
+    case password = "password"
+    case publicKey = "publicKey"
+    case passwordAndKey = "passwordAndKey"
+    
+    var displayName: String {
+        switch self {
+        case .password: return "Password"
+        case .publicKey: return "SSH Key"
+        case .passwordAndKey: return "Password + SSH Key"
+        }
+    }
+}
+
+// MARK: - SSH Key Pair Model
+struct SSHKeyPair: Identifiable, Codable {
+    let id: UUID
+    let name: String
+    let publicKey: String
+    let privateKey: String // Will be stored in keychain
+    let passphrase: String? // Will be stored in keychain
+    let createdAt: Date
+    
+    init(id: UUID = UUID(), name: String, publicKey: String, privateKey: String, passphrase: String? = nil) {
+        self.id = id
+        self.name = name
+        self.publicKey = publicKey
+        self.privateKey = privateKey
+        self.passphrase = passphrase
+        self.createdAt = Date()
+    }
+}
+
+// MARK: - NATS Configuration
+struct NATSConfig: Codable, Equatable {
+    let servers: [String]
+    let subject: String
+    let credentials: String?
+    let tlsEnabled: Bool
+    
+    init(servers: [String], subject: String, credentials: String? = nil, tlsEnabled: Bool = true) {
+        self.servers = servers
+        self.subject = subject
+        self.credentials = credentials
+        self.tlsEnabled = tlsEnabled
+    }
+}
+
+// MARK: - Enhanced SFTPConnection
 struct SFTPConnection: Identifiable, Codable, Equatable {
     let id: UUID
     var name: String
     var host: String
     var port: Int?
     var username: String
+    var authMethod: SFTPAuthMethod
     var password: String
+    var keyPairId: UUID?
     var remotePath: String
-    var status: ConnectionStatus = .unknown
+    var status: ConnectionStatus
     var lastChecked: Date?
-    var isPollingEnabled: Bool = true
+    var isNATSEnabled: Bool
+    var natsConfig: NATSConfig?
     
-    init(id: UUID = UUID(), name: String, host: String, port: Int? = nil, username: String, password: String, remotePath: String = "/") {
+    init(id: UUID = UUID(), name: String, host: String, port: Int? = nil, username: String, 
+         authMethod: SFTPAuthMethod = .password, password: String = "", keyPairId: UUID? = nil,
+         remotePath: String = "/", isNATSEnabled: Bool = false, natsConfig: NATSConfig? = nil) {
         self.id = id
         self.name = name
         self.host = host
         self.port = port
         self.username = username
+        self.authMethod = authMethod
         self.password = password
+        self.keyPairId = keyPairId
         self.remotePath = remotePath
+        self.status = .unknown
+        self.isNATSEnabled = isNATSEnabled
+        self.natsConfig = natsConfig
     }
 }
 
-enum ConnectionStatus: String, Codable, CaseIterable {
-    case unknown = "Not checked"
-    case checking = "Checking..."
-    case connected = "Connected"
-    case disconnected = "Disconnected"
-    case error = "Connection Error"
-    case timeout = "Connection Timeout"
+// MARK: - Enhanced Connection Status
+enum ConnectionStatus: String, Codable, CaseIterable, Equatable {
+    case unknown = "unknown"
+    case connecting = "connecting"
+    case connected = "connected"
+    case disconnected = "disconnected"
+    case error = "error"
+    case authFailed = "authFailed"
+    case syncError = "syncError"
     
-    // Legacy support
-    case valid = "Valid"
-    case invalid = "Invalid"
+    // Legacy support for existing code
+    case checking = "checking"
+    case valid = "valid"
+    case invalid = "invalid"
+    case timeout = "timeout"
     
     var displayName: String {
         switch self {
-        case .unknown: return "Not Checked"
-        case .checking: return "Checking..."
-        case .connected: return "Connected"
-        case .disconnected: return "Disconnected"
+        case .unknown: return "Unknown"
+        case .connecting, .checking: return "Connecting..."
+        case .connected, .valid: return "Connected"
+        case .disconnected, .invalid: return "Disconnected"
         case .error: return "Connection Error"
+        case .authFailed: return "Authentication Failed"
+        case .syncError: return "Sync Error"
         case .timeout: return "Connection Timeout"
-        case .valid: return "Connected"
-        case .invalid: return "Connection Error"
         }
     }
     
@@ -53,7 +117,7 @@ enum ConnectionStatus: String, Codable, CaseIterable {
     }
 }
 
-// Simple connection storage
+// MARK: - Enhanced Connection Store
 class SFTPConnectionStore {
     private static let storageKey = "SFTPConnections"
     private static let appGroupID = "group.mansivisuals.SFTPFiles"
@@ -69,9 +133,7 @@ class SFTPConnectionStore {
     
     static func saveConnections(_ connections: [SFTPConnection]) {
         guard let defaults = UserDefaults(suiteName: appGroupID),
-              let data = try? JSONEncoder().encode(connections) else {
-            return
-        }
+              let data = try? JSONEncoder().encode(connections) else { return }
         defaults.set(data, forKey: storageKey)
         defaults.synchronize()
     }

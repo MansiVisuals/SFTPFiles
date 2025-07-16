@@ -113,11 +113,21 @@ class SFTPFileProviderItem: NSObject, NSFileProviderItem {
     }
     
     var contentModificationDate: Date? {
-        return fileInfo?.mtime ?? Date()
+        if isRootItem {
+            // Use now for root, never epoch
+            return Date()
+        }
+        // Use mtime if available, else fallback to atime, else createTime, else now
+        return fileInfo?.mtime != Date(timeIntervalSince1970: 0) ? fileInfo?.mtime : (fileInfo?.atime != Date(timeIntervalSince1970: 0) ? fileInfo?.atime : (fileInfo?.createTime != Date(timeIntervalSince1970: 0) ? fileInfo?.createTime : Date()))
     }
-    
+
     var creationDate: Date? {
-        return fileInfo?.mtime ?? Date()
+        if isRootItem {
+            // Use now for root, never epoch
+            return Date()
+        }
+        // Use createTime if available, else mtime, else atime, else now
+        return fileInfo?.createTime != Date(timeIntervalSince1970: 0) ? fileInfo?.createTime : (fileInfo?.mtime != Date(timeIntervalSince1970: 0) ? fileInfo?.mtime : (fileInfo?.atime != Date(timeIntervalSince1970: 0) ? fileInfo?.atime : Date()))
     }
     
     var itemVersion: NSFileProviderItemVersion {

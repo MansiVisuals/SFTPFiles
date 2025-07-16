@@ -10,9 +10,10 @@
 		134E190A2E230855001C4525 /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 13C433022E22F7730068D960 /* UniformTypeIdentifiers.framework */; };
 		134E19222E230855001C4525 /* SFTPFilesFileProviderUI.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 134E19182E230855001C4525 /* SFTPFilesFileProviderUI.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		134E19252E230855001C4525 /* SFTPFilesFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 134E19092E230855001C4525 /* SFTPFilesFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1384C0F12E27A8E900B4CFEB /* JetStream in Frameworks */ = {isa = PBXBuildFile; productRef = 1384C0F02E27A8E900B4CFEB /* JetStream */; };
+		1384C0F32E27A8E900B4CFEB /* Nats in Frameworks */ = {isa = PBXBuildFile; productRef = 1384C0F22E27A8E900B4CFEB /* Nats */; };
 		13C433202E22FA540068D960 /* mft.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 13C4331F2E22FA540068D960 /* mft.xcframework */; };
 		13C433212E22FA540068D960 /* mft.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 13C4331F2E22FA540068D960 /* mft.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		13DFC44D2E2678A100D85E88 /* Nats in Frameworks */ = {isa = PBXBuildFile; productRef = 13DFC44C2E2678A100D85E88 /* Nats */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -171,7 +172,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				13DFC44D2E2678A100D85E88 /* Nats in Frameworks */,
+				1384C0F32E27A8E900B4CFEB /* Nats in Frameworks */,
+				1384C0F12E27A8E900B4CFEB /* JetStream in Frameworks */,
 				13C433202E22FA540068D960 /* mft.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -295,7 +297,8 @@
 			);
 			name = SFTPFiles;
 			packageProductDependencies = (
-				13DFC44C2E2678A100D85E88 /* Nats */,
+				1384C0F02E27A8E900B4CFEB /* JetStream */,
+				1384C0F22E27A8E900B4CFEB /* Nats */,
 			);
 			productName = SFTPFiles;
 			productReference = 13C432D22E22F7530068D960 /* SFTPFiles.app */;
@@ -386,7 +389,7 @@
 			mainGroup = 13C432C92E22F7530068D960;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				13DFC44B2E2678A100D85E88 /* XCRemoteSwiftPackageReference "nats" */,
+				1384C0EF2E27A8E900B4CFEB /* XCRemoteSwiftPackageReference "nats" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 13C432D32E22F7530068D960 /* Products */;
@@ -959,7 +962,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		13DFC44B2E2678A100D85E88 /* XCRemoteSwiftPackageReference "nats" */ = {
+		1384C0EF2E27A8E900B4CFEB /* XCRemoteSwiftPackageReference "nats" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/nats-io/nats.swift";
 			requirement = {
@@ -970,9 +973,14 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		13DFC44C2E2678A100D85E88 /* Nats */ = {
+		1384C0F02E27A8E900B4CFEB /* JetStream */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 13DFC44B2E2678A100D85E88 /* XCRemoteSwiftPackageReference "nats" */;
+			package = 1384C0EF2E27A8E900B4CFEB /* XCRemoteSwiftPackageReference "nats" */;
+			productName = JetStream;
+		};
+		1384C0F22E27A8E900B4CFEB /* Nats */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1384C0EF2E27A8E900B4CFEB /* XCRemoteSwiftPackageReference "nats" */;
 			productName = Nats;
 		};
 /* End XCSwiftPackageProductDependency section */

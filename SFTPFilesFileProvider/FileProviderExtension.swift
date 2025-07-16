@@ -188,21 +188,18 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             progress.completedUnitCount = 1
             return progress
         }
-        
+
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try self.performWithRetry {
-                    // Use the identifier as the absolute path
                     let absolutePath = identifier.rawValue
                     NSLog("SFTPFiles: Getting file info for absolute path: '\(absolutePath)'")
-                    
                     let fileInfo = try self.sftp!.infoForFile(atPath: absolutePath)
                     let item = SFTPFileProviderItem(
-                        fileInfo: fileInfo, 
+                        fileInfo: fileInfo,
                         path: absolutePath,
                         downloadManager: self.downloadManager
                     )
-                    
                     DispatchQueue.main.async {
                         completionHandler(item, nil)
                         progress.completedUnitCount = 1
@@ -211,22 +208,13 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             } catch {
                 NSLog("SFTPFiles: Error getting item info for \(identifier.rawValue): \(error.localizedDescription)")
                 DispatchQueue.main.async {
-                    let providerError: NSFileProviderError
-                    
-                    if error.localizedDescription.contains("not found") || error.localizedDescription.contains("No such file") {
-                        providerError = NSFileProviderError(.noSuchItem)
-                    } else if error.localizedDescription.contains("permission") || error.localizedDescription.contains("denied") {
-                        providerError = NSFileProviderError(.notAuthenticated)
-                    } else {
-                        providerError = NSFileProviderError(.serverUnreachable)
-                    }
-                    
+                    // Use the correct error constructor for missing items
+                    let providerError = NSError.fileProviderErrorForNonExistentItem(withIdentifier: identifier)
                     completionHandler(nil, providerError)
                     progress.completedUnitCount = 1
                 }
             }
         }
-        
         return progress
     }
     
@@ -409,17 +397,13 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 try self.performWithRetry {
                     var finalPath = originalPath
                     var itemMoved = false
-                    
                     if changedFields.contains(.contents), let contents = contents {
                         NSLog("SFTPFiles: Updating file contents at: '\(originalPath)'")
-                        
                         let attributes = try FileManager.default.attributesOfItem(atPath: contents.path)
                         let fileSize = attributes[.size] as? Int64 ?? 0
                         progress.totalUnitCount = fileSize + 10
-                        
                         var uploadedBytes: Int64 = 0
                         let inputStream = InputStream(url: contents)!
-                        
                         try self.sftp!.write(stream: inputStream, toFileAtPath: originalPath, append: false) { uploaded in
                             uploadedBytes = Int64(uploaded)
                             DispatchQueue.main.async {
@@ -427,10 +411,8 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                             }
                             return !progress.isCancelled
                         }
-                        
                         NSLog("SFTPFiles: Content update completed - \(uploadedBytes) bytes")
                     }
-                    
                     if changedFields.contains(.filename) || changedFields.contains(.parentItemIdentifier) {
                         let newParentPath: String
                         if item.parentItemIdentifier == .rootContainer {
@@ -438,37 +420,28 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                         } else {
                             newParentPath = item.parentItemIdentifier.rawValue
                         }
-                        
                         let newPath = self.combinePaths(newParentPath, item.filename)
-                        
                         NSLog("SFTPFiles: Moving/renaming - From: '\(originalPath)' To: '\(newPath)'")
-                        
                         if newPath != originalPath {
                             try self.sftp!.moveItem(atPath: originalPath, toPath: newPath)
                             finalPath = newPath
                             itemMoved = true
-                            
                             self.downloadManager.updatePath(from: NSFileProviderItemIdentifier(originalPath), 
                                                            to: NSFileProviderItemIdentifier(finalPath))
-                            
                             // Signal both old and new parent containers
                             let oldParentPath = (originalPath as NSString).deletingLastPathComponent
                             self.signalEnumeratorForContainer(oldParentPath)
                             self.signalEnumeratorForContainer(newParentPath)
-                            
                             NSLog("SFTPFiles: Move/rename completed successfully")
                         }
                     }
-                    
                     let fileInfo = try self.sftp!.infoForFile(atPath: finalPath)
                     let updatedItem = SFTPFileProviderItem(
-                        fileInfo: fileInfo, 
+                        fileInfo: fileInfo,
                         path: finalPath,
                         downloadManager: self.downloadManager
                     )
-                    
                     NSLog("SFTPFiles: Modify completed - Final path: '\(finalPath)', Filename: '\(updatedItem.filename)'")
-                    
                     DispatchQueue.main.async {
                         progress.completedUnitCount = progress.totalUnitCount
                         completionHandler(updatedItem, [], itemMoved, nil)
@@ -477,19 +450,12 @@ class SFTPFileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             } catch {
                 NSLog("SFTPFiles: Modify item error: \(error.localizedDescription)")
                 DispatchQueue.main.async {
-                    let providerError: NSFileProviderError
-                    if error.localizedDescription.contains("not found") || error.localizedDescription.contains("No such file") {
-                        providerError = NSFileProviderError(.noSuchItem)
-                    } else if error.localizedDescription.contains("permission") || error.localizedDescription.contains("denied") {
-                        providerError = NSFileProviderError(.insufficientQuota)
-                    } else {
-                        providerError = NSFileProviderError(.serverUnreachable)
-                    }
+                    // Use the correct error constructor for missing items
+                    let providerError = NSError.fileProviderErrorForNonExistentItem(withIdentifier: item.itemIdentifier)
                     completionHandler(nil, [], false, providerError)
                 }
             }
         }
-        
         return progress
     }
     

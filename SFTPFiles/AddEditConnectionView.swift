@@ -4,21 +4,40 @@ import mft
 struct AddEditConnectionView: View {
     @ObservedObject var viewModel: SFTPConnectionViewModel
     @Environment(\.presentationMode) var presentationMode
+    
+    // Basic connection fields
     @State private var name: String = ""
     @State private var host: String = ""
     @State private var port: String = ""
     @State private var username: String = ""
-    @State private var password: String = ""
     @State private var remotePath: String = ""
+    
+    // Authentication
+    @State private var authMethod: SFTPAuthMethod = .password
+    @State private var password: String = ""
+    @State private var selectedKeyPair: SSHKeyPair?
+    @State private var showingKeyPairPicker = false
+    @State private var showingKeyGenerator = false
+    
+    // NATS configuration
+    @State private var isNATSEnabled: Bool = false
+    @State private var natsServers: String = ""
+    @State private var natsSubject: String = ""
+    @State private var natsCredentials: String = ""
+    @State private var natsTLSEnabled: Bool = true
+    
+    // State
     @State private var status: ConnectionStatus = .unknown
     @State private var isTesting = false
     @State private var showingAlert = false
     @State private var alertMessage = ""
-    @State private var isMonitoringEnabled = true
     
     var connection: SFTPConnection? = nil
     var isEditing: Bool { connection != nil }
-
+    
+    private let keyManager = SSHKeyManager()
+    private let connectionManager = EnhancedMFTConnectionManager()
+    
     var body: some View {
         NavigationView {
             ZStack {
@@ -102,14 +121,6 @@ struct AddEditConnectionView: View {
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 
-                                // Password
-                                CustomSecureField(
-                                    title: "Password",
-                                    text: $password,
-                                    placeholder: "••••••••",
-                                    icon: "lock"
-                                )
-                                
                                 // Remote Path
                                 CustomInputField(
                                     title: "Remote Path",
@@ -119,46 +130,6 @@ struct AddEditConnectionView: View {
                                 )
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
-                                
-                                // Monitoring Toggle
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Connection Monitoring")
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(.primary)
-                                    HStack {
-                                        HStack(spacing: 12) {
-                                            Image(systemName: "wifi.circle")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(.secondary)
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text("Enable automatic monitoring")
-                                                    .font(.subheadline)
-                                                    .foregroundColor(.primary)
-                                                Text("Periodically check connection status")
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
-                                            }
-                                        }
-                                        Spacer()
-                                        Toggle("", isOn: $isMonitoringEnabled)
-                                            .labelsHidden()
-                                            .disabled(viewModel.pollingManager.backgroundRefreshStatus != .available)
-                                            .opacity(viewModel.pollingManager.backgroundRefreshStatus != .available ? 0.5 : 1.0)
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .fill(Color(.systemGray6))
-                                    )
-                                    if viewModel.pollingManager.backgroundRefreshStatus != .available {
-                                        Text("Background App Refresh is disabled. Monitoring cannot be enabled.")
-                                            .font(.caption)
-                                            .foregroundColor(.orange)
-                                            .padding(.top, 4)
-                                    }
-                                }
                             }
                             .padding(.horizontal, 20)
                         }
@@ -169,6 +140,237 @@ struct AddEditConnectionView: View {
                                 .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 2)
                         )
                         .padding(.horizontal, 16)
+                        
+                        // Authentication Section
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack {
+                                Image(systemName: "key.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.accentColor)
+                                    .frame(width: 32, height: 32)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Authentication")
+                                        .font(.headline)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.primary)
+                                    
+                                    Text("Choose your authentication method")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Spacer()
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.top, 8)
+                            
+                            VStack(spacing: 16) {
+                                // Authentication Method Picker
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Authentication Method")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.primary)
+                                    
+                                    Picker("Authentication Method", selection: $authMethod) {
+                                        ForEach(SFTPAuthMethod.allCases, id: \.self) { method in
+                                            Text(method.displayName).tag(method)
+                                        }
+                                    }
+                                    .pickerStyle(SegmentedPickerStyle())
+                                }
+                                .padding(.horizontal, 20)
+                                
+                                // Password Field (shown for password and passwordAndKey)
+                                if authMethod == .password || authMethod == .passwordAndKey {
+                                    CustomSecureField(
+                                        title: "Password",
+                                        text: $password,
+                                        placeholder: "••••••••",
+                                        icon: "lock",
+                                        isRequired: true
+                                    )
+                                    .padding(.horizontal, 20)
+                                }
+                                
+                                // SSH Key Selection (shown for publicKey and passwordAndKey)
+                                if authMethod == .publicKey || authMethod == .passwordAndKey {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Text("SSH Key Pair")
+                                                .font(.subheadline)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(.primary)
+                                            
+                                            Text("*")
+                                                .font(.subheadline)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(.red)
+                                        }
+                                        
+                                        HStack(spacing: 12) {
+                                            Image(systemName: "key")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(.accentColor)
+                                                .frame(width: 20, height: 20)
+                                            
+                                            if let keyPair = selectedKeyPair {
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text(keyPair.name)
+                                                        .font(.body)
+                                                        .foregroundColor(.primary)
+                                                    
+                                                    Text("Created: \(keyPair.createdAt, formatter: dateFormatter)")
+                                                        .font(.caption)
+                                                        .foregroundColor(.secondary)
+                                                }
+                                            } else {
+                                                Text("No key pair selected")
+                                                    .font(.body)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            
+                                            Spacer()
+                                            
+                                            HStack(spacing: 8) {
+                                                Button("Select") {
+                                                    showingKeyPairPicker = true
+                                                }
+                                                .font(.caption)
+                                                .foregroundColor(.accentColor)
+                                                
+                                                Button("Generate") {
+                                                    showingKeyGenerator = true
+                                                }
+                                                .font(.caption)
+                                                .foregroundColor(.accentColor)
+                                            }
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 12)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12)
+                                                .fill(Color(.systemGray6))
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 12)
+                                                        .stroke(selectedKeyPair == nil ? Color.red.opacity(0.3) : Color.clear, lineWidth: 1)
+                                                )
+                                        )
+                                    }
+                                    .padding(.horizontal, 20)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color(.systemBackground))
+                                .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 2)
+                        )
+                        .padding(.horizontal, 16)
+                        
+                        // NATS Configuration Section
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack {
+                                Image(systemName: "bolt.circle")
+                                    .font(.title2)
+                                    .foregroundColor(.accentColor)
+                                    .frame(width: 32, height: 32)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Real-time Sync")
+                                        .font(.headline)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.primary)
+                                    
+                                    Text("NATS integration for instant file updates")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                Toggle("", isOn: $isNATSEnabled)
+                                    .labelsHidden()
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.top, 8)
+                            
+                            if isNATSEnabled {
+                                VStack(spacing: 16) {
+                                    CustomInputField(
+                                        title: "NATS Servers",
+                                        text: $natsServers,
+                                        placeholder: "nats://localhost:4222",
+                                        icon: "server.rack",
+                                        isRequired: true
+                                    )
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    
+                                    CustomInputField(
+                                        title: "Subject",
+                                        text: $natsSubject,
+                                        placeholder: "sftpgo.events",
+                                        icon: "tag",
+                                        isRequired: true
+                                    )
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    
+                                    CustomInputField(
+                                        title: "Credentials (Optional)",
+                                        text: $natsCredentials,
+                                        placeholder: "JWT token or credentials file",
+                                        icon: "key"
+                                    )
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    
+                                    HStack {
+                                        HStack(spacing: 12) {
+                                            Image(systemName: "lock.shield")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(.accentColor)
+                                                .frame(width: 20, height: 20)
+                                            
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text("Enable TLS")
+                                                    .font(.subheadline)
+                                                    .fontWeight(.medium)
+                                                    .foregroundColor(.primary)
+                                                
+                                                Text("Secure connection to NATS server")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Toggle("", isOn: $natsTLSEnabled)
+                                            .labelsHidden()
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .fill(Color(.systemGray6))
+                                    )
+                                }
+                                .padding(.horizontal, 20)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+                        }
+                        .padding(.vertical, 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color(.systemBackground))
+                                .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 2)
+                        )
+                        .padding(.horizontal, 16)
+                        .animation(.easeInOut(duration: 0.3), value: isNATSEnabled)
                         
                         // Connection Status Section
                         VStack(alignment: .leading, spacing: 16) {
@@ -253,12 +455,11 @@ struct AddEditConnectionView: View {
                                     .padding(.vertical, 14)
                                     .background(
                                         RoundedRectangle(cornerRadius: 12)
-                                            .fill(host.isEmpty || username.isEmpty || isTesting ? 
-                                                  Color.accentColor.opacity(0.5) : Color.accentColor)
+                                            .fill(canTestConnection ? Color.accentColor : Color.accentColor.opacity(0.5))
                                     )
                                     .shadow(color: Color.accentColor.opacity(0.3), radius: 4, x: 0, y: 2)
                                 }
-                                .disabled(host.isEmpty || username.isEmpty || isTesting)
+                                .disabled(!canTestConnection)
                                 .buttonStyle(BorderlessButtonStyle())
                                 .padding(.horizontal, 20)
                             }
@@ -278,7 +479,7 @@ struct AddEditConnectionView: View {
                                     .font(.title3)
                                     .foregroundColor(.accentColor)
                                 
-                                Text("How it works")
+                                Text("Features")
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
                                     .foregroundColor(.primary)
@@ -288,21 +489,27 @@ struct AddEditConnectionView: View {
                             
                             VStack(alignment: .leading, spacing: 8) {
                                 InfoRow(
+                                    icon: "key.fill",
+                                    title: "SSH Key Authentication",
+                                    description: "Support for password, SSH keys, or both"
+                                )
+                                
+                                InfoRow(
+                                    icon: "bolt.circle.fill",
+                                    title: "Real-time Sync",
+                                    description: "NATS integration for instant file updates"
+                                )
+                                
+                                InfoRow(
                                     icon: "folder.badge.plus",
                                     title: "Files App Integration",
-                                    description: "Your SFTP server will appear under 'Locations' in the Files app"
+                                    description: "Access files directly from the Files app"
                                 )
                                 
                                 InfoRow(
-                                    icon: "arrow.up.right.square",
-                                    title: "Remote Path",
-                                    description: "Specify the initial directory to browse (optional)"
-                                )
-                                
-                                InfoRow(
-                                    icon: "checkmark.shield",
-                                    title: "Test Connection",
-                                    description: "Always test your connection before saving"
+                                    icon: "icloud.fill",
+                                    title: "iCloud-like Experience",
+                                    description: "Seamless sync and conflict resolution"
                                 )
                             }
                         }
@@ -328,7 +535,7 @@ struct AddEditConnectionView: View {
                     Button(isEditing ? "Save" : "Add") {
                         saveConnection()
                     }
-                    .disabled(host.isEmpty || username.isEmpty || (!isEditing && !status.isHealthy))
+                    .disabled(!canSaveConnection)
                     .fontWeight(.semibold)
                 }
                 ToolbarItem(placement: .cancellationAction) {
@@ -342,26 +549,45 @@ struct AddEditConnectionView: View {
             } message: {
                 Text(alertMessage)
             }
+            .sheet(isPresented: $showingKeyPairPicker) {
+                SSHKeyPairPickerView(selectedKeyPair: $selectedKeyPair)
+            }
+            .sheet(isPresented: $showingKeyGenerator) {
+                SSHKeyGeneratorView { keyPair in
+                    selectedKeyPair = keyPair
+                }
+            }
         }
         .onAppear {
-            if let connection = connection {
-                name = connection.name
-                host = connection.host
-                port = connection.port != nil ? String(connection.port!) : ""
-                username = connection.username
-                password = connection.password
-                remotePath = connection.remotePath
-                status = connection.status
-                isMonitoringEnabled = connection.isPollingEnabled
-            }
+            loadConnectionData()
+        }
+    }
+    
+    // MARK: - Computed Properties
+    private var canTestConnection: Bool {
+        !host.isEmpty && !username.isEmpty && !isTesting && hasValidAuth
+    }
+    
+    private var canSaveConnection: Bool {
+        !host.isEmpty && !username.isEmpty && hasValidAuth && (!isEditing || status.isHealthy)
+    }
+    
+    private var hasValidAuth: Bool {
+        switch authMethod {
+        case .password:
+            return !password.isEmpty
+        case .publicKey:
+            return selectedKeyPair != nil
+        case .passwordAndKey:
+            return !password.isEmpty && selectedKeyPair != nil
         }
     }
     
     private var statusColor: Color {
         switch status {
         case .connected, .valid: return .green
-        case .disconnected, .invalid, .error: return .red
-        case .checking: return .blue
+        case .connecting, .checking: return .blue
+        case .disconnected, .invalid, .error, .authFailed, .syncError: return .red
         case .timeout: return .orange
         case .unknown: return .gray
         }
@@ -370,69 +596,82 @@ struct AddEditConnectionView: View {
     private var statusIcon: String {
         switch status {
         case .connected, .valid: return "checkmark.circle.fill"
-        case .disconnected, .invalid, .error: return "xmark.octagon.fill"
-        case .checking: return "arrow.triangle.2.circlepath"
+        case .connecting, .checking: return "arrow.triangle.2.circlepath"
+        case .disconnected, .invalid, .error, .authFailed, .syncError: return "xmark.octagon.fill"
         case .timeout: return "clock.badge.exclamationmark"
         case .unknown: return "questionmark.circle"
         }
     }
     
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .none
+        return formatter
+    }
+    
+    // MARK: - Methods
+    private func loadConnectionData() {
+        guard let connection = connection else { return }
+        
+        name = connection.name
+        host = connection.host
+        port = connection.port != nil ? String(connection.port!) : ""
+        username = connection.username
+        remotePath = connection.remotePath
+        authMethod = connection.authMethod
+        password = connection.password
+        status = connection.status
+        
+        if let keyPairId = connection.keyPairId {
+            selectedKeyPair = try? keyManager.getKeyPair(id: keyPairId)
+        }
+        
+        if let natsConfig = connection.natsConfig {
+            isNATSEnabled = connection.isNATSEnabled
+            natsServers = natsConfig.servers.joined(separator: ",")
+            natsSubject = natsConfig.subject
+            natsCredentials = natsConfig.credentials ?? ""
+            natsTLSEnabled = natsConfig.tlsEnabled
+        }
+    }
+    
     private func testConnection() {
         isTesting = true
-        status = .checking
+        status = .connecting
         
-        let portInt = port.isEmpty ? nil : Int(port)
-        let testConn = SFTPConnection(
-            name: name.isEmpty ? host : name,
-            host: host,
-            port: portInt,
-            username: username,
-            password: password,
-            remotePath: remotePath
-        )
+        let testConnection = createSFTPConnection()
         
-        viewModel.testConnection(testConn) { result in
+        viewModel.testConnection(testConnection) { result in
             status = result
             isTesting = false
             
             switch result {
             case .connected, .valid:
-                alertMessage = "Connection successful! You can now add this connection."
+                alertMessage = "Connection successful! You can now save this connection."
+            case .authFailed:
+                alertMessage = "Authentication failed. Please check your credentials."
             case .disconnected, .invalid, .error:
-                alertMessage = "Connection failed. Please check your credentials and try again."
+                alertMessage = "Connection failed. Please check your server settings."
             case .timeout:
-                alertMessage = "Connection timed out. Please check your server address and try again."
-            case .unknown:
-                alertMessage = "Unknown error occurred during connection test."
-            case .checking:
-                alertMessage = "Still checking connection..."
+                alertMessage = "Connection timed out. Please check your server address."
+            default:
+                alertMessage = "Connection test completed with status: \(result.displayName)"
             }
             showingAlert = true
         }
     }
     
     private func saveConnection() {
-        guard !host.isEmpty, !username.isEmpty else { return }
+        guard hasValidAuth else { return }
         
-        // For new connections, require a valid test
         if !isEditing && !status.isHealthy {
-            alertMessage = "Please test the connection and ensure it's valid before adding."
+            alertMessage = "Please test the connection and ensure it's valid before saving."
             showingAlert = true
             return
         }
         
-        let portInt = port.isEmpty ? nil : Int(port)
-        var newConnection = SFTPConnection(
-            id: connection?.id ?? UUID(),
-            name: name.isEmpty ? host : name,
-            host: host,
-            port: portInt,
-            username: username,
-            password: password,
-            remotePath: remotePath
-        )
-        newConnection.isPollingEnabled = isMonitoringEnabled
-        newConnection.status = status
+        let newConnection = createSFTPConnection()
         
         if isEditing {
             viewModel.updateConnection(newConnection)
@@ -442,10 +681,35 @@ struct AddEditConnectionView: View {
         
         presentationMode.wrappedValue.dismiss()
     }
+    
+    private func createSFTPConnection() -> SFTPConnection {
+        let portInt = Int(port) ?? 22
+        let keyPairId = selectedKeyPair?.id
+        
+        let natsConfig = isNATSEnabled ? NATSConfig(
+            servers: natsServers.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) },
+            subject: natsSubject,
+            credentials: natsCredentials.isEmpty ? nil : natsCredentials,
+            tlsEnabled: natsTLSEnabled
+        ) : nil
+        
+        return SFTPConnection(
+            id: connection?.id ?? UUID(),
+            name: name.isEmpty ? host : name,
+            host: host,
+            port: portInt,
+            username: username,
+            authMethod: authMethod,
+            password: password,
+            keyPairId: keyPairId,
+            remotePath: remotePath,
+            isNATSEnabled: isNATSEnabled,
+            natsConfig: natsConfig
+        )
+    }
 }
 
 // MARK: - Custom Input Components
-
 struct CustomInputField: View {
     let title: String
     @Binding var text: String

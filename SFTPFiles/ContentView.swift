@@ -1,400 +1,185 @@
+// MARK: - Background Refresh Status Enum for Polling
+enum BackgroundRefreshStatus: String, CaseIterable {
+    case available
+    case restricted
+    case denied
+}
 import SwiftUI
+import Combine
 import BackgroundTasks
 import FileProvider
 import mft
 import UIKit
 
-// MARK: - Simple Polling Manager
-class ConnectionPollingManager: ObservableObject {
-    @Published var pollingInterval: TimeInterval = 86400.0  // Default to once daily
-    @Published var isPollingEnabled: Bool = true
-    @Published var isFilesSyncEnabled: Bool = true
-    @Published var backgroundRefreshStatus: UIBackgroundRefreshStatus = .available
-    @Published var showBackgroundRefreshAlert: Bool = false
-    @Published var isNATSEnabled: Bool = false
-    @Published var lastSyncDate: Date?
-    
-    private var timer: Timer?
-    private weak var viewModel: SFTPConnectionViewModel?
-    private let appGroupID = "group.mansivisuals.SFTPFiles"
-    
-    init(viewModel: SFTPConnectionViewModel) {
-        self.viewModel = viewModel
-        loadSettings()
-        checkBackgroundRefreshStatus()
-        startPolling()
-        setupBackgroundRefreshObserver()
-    }
-    
-    deinit {
-        stopPolling()
-        NotificationCenter.default.removeObserver(self)
-    }
-    
-    func startPolling() {
-        stopPolling()
-        guard isPollingEnabled else { return }
-        
-        NSLog("SFTPFiles: Starting polling with interval: \(pollingInterval) seconds")
-        
-        timer = Timer.scheduledTimer(withTimeInterval: pollingInterval, repeats: true) { [weak self] _ in
-            self?.performPollingCycle()
-        }
-        
-        performPollingCycle()
-    }
-    
-    func stopPolling() {
-        timer?.invalidate()
-        timer = nil
-    }
-    
-    func updatePollingInterval(_ interval: TimeInterval) {
-        pollingInterval = interval
-        saveSettings()
-        startPolling()
-    }
-    
-    func togglePolling(_ enabled: Bool) {
-        isPollingEnabled = enabled
-        saveSettings()
-        if enabled {
-            startPolling()
-        } else {
-            stopPolling()
-        }
-    }
-    
-    func toggleFilesSync(_ enabled: Bool) {
-        isFilesSyncEnabled = enabled
-        saveSettings()
-    }
-    
-    func manualSync() {
-        NSLog("SFTPFiles: Manual sync initiated")
-        performPollingCycle()
-    }
-    
-    // MARK: - Simple Polling Cycle
-    private func performPollingCycle() {
-        guard let viewModel = self.viewModel else { return }
-        
-        NSLog("SFTPFiles: Starting polling cycle")
-        lastSyncDate = Date()
-        
-        let group = DispatchGroup()
-        
-        // Check all enabled connections
-        for connection in viewModel.connections {
-            if connection.isPollingEnabled {
-                group.enter()
-                checkConnection(connection) {
-                    group.leave()
-                }
-            }
-        }
-        
-        // After connection checks, sync Files app if enabled
-        group.notify(queue: .main) {
-            if self.isFilesSyncEnabled {
-                self.syncFilesApp()
-            }
-            NSLog("SFTPFiles: Polling cycle completed")
-        }
-    }
-    
-    func checkConnection(_ connection: SFTPConnection, completion: @escaping () -> Void) {
-        viewModel?.updateStatus(for: connection, status: .checking)
-        viewModel?.testConnection(connection) { [weak self] status in
-            let detailedStatus: ConnectionStatus
-            switch status {
-            case .valid:
-                detailedStatus = .connected
-            case .invalid:
-                detailedStatus = .error
-            default:
-                detailedStatus = status
-            }
-            self?.viewModel?.updateStatus(for: connection, status: detailedStatus)
-            self?.viewModel?.updateLastChecked(for: connection)
-            completion()
-        }
-    }
-    
-    // MARK: - Simple Files App Sync
-    private func syncFilesApp() {
-        guard let viewModel = self.viewModel else { return }
-        
-        NSLog("SFTPFiles: Starting Files app sync")
-        
-        NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
-            guard error == nil else {
-                NSLog("SFTPFiles: Failed to get domains: \(error!.localizedDescription)")
-                return
-            }
-            
-            let syncGroup = DispatchGroup()
-            
-            for connection in viewModel.connections {
-                let domainIdentifier = NSFileProviderDomainIdentifier(rawValue: connection.id.uuidString)
-                
-                if let domain = domains.first(where: { $0.identifier == domainIdentifier }) {
-                    syncGroup.enter()
-                    
-                    let manager = NSFileProviderManager(for: domain)
-                    
-                    // Signal root container for re-enumeration
-                    manager?.signalEnumerator(for: .rootContainer) { error in
-                        if let error = error {
-                            NSLog("SFTPFiles: Failed to signal root enumerator for \(connection.name): \(error.localizedDescription)")
-                        } else {
-                            NSLog("SFTPFiles: Successfully signaled root enumerator for \(connection.name)")
-                        }
-                        syncGroup.leave()
-                    }
-                } else {
-                    NSLog("SFTPFiles: Domain not found for connection: \(connection.name)")
-                }
-            }
-            
-            syncGroup.notify(queue: .main) {
-                NSLog("SFTPFiles: Files app sync completed")
-            }
-        }
-    }
-    
-    // MARK: - Force Refresh
-    func forceRefreshAllConnections() {
-        NSLog("SFTPFiles: Force refreshing all connections")
-        
-        NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
-            guard error == nil else {
-                NSLog("SFTPFiles: Failed to get domains for force refresh: \(error!.localizedDescription)")
-                return
-            }
-            
-            for domain in domains {
-                let manager = NSFileProviderManager(for: domain)
-                
-                // Signal enumerators for refresh
-                manager?.signalEnumerator(for: .rootContainer) { error in
-                    if let error = error {
-                        NSLog("SFTPFiles: Failed to signal root enumerator for \(domain.displayName): \(error.localizedDescription)")
-                    } else {
-                        NSLog("SFTPFiles: Successfully signaled root enumerator for \(domain.displayName)")
-                    }
-                }
-            }
-        }
-    }
-    
-    private func loadSettings() {
-        if let defaults = UserDefaults(suiteName: appGroupID) {
-            let intervalValue = defaults.double(forKey: "pollingInterval")
-            if intervalValue > 0 {
-                pollingInterval = intervalValue
-            }
-            
-            isPollingEnabled = defaults.object(forKey: "isPollingEnabled") == nil ? true : defaults.bool(forKey: "isPollingEnabled")
-            isFilesSyncEnabled = defaults.object(forKey: "isFilesSyncEnabled") == nil ? true : defaults.bool(forKey: "isFilesSyncEnabled")
-            isNATSEnabled = defaults.bool(forKey: "isNATSEnabled")
-            
-            if let lastSyncData = defaults.object(forKey: "lastSyncDate") as? Date {
-                lastSyncDate = lastSyncData
-            }
-        }
-    }
-    
-    private func saveSettings() {
-        if let defaults = UserDefaults(suiteName: appGroupID) {
-            defaults.set(pollingInterval, forKey: "pollingInterval")
-            defaults.set(isPollingEnabled, forKey: "isPollingEnabled")
-            defaults.set(isFilesSyncEnabled, forKey: "isFilesSyncEnabled")
-            defaults.set(isNATSEnabled, forKey: "isNATSEnabled")
-            
-            if let lastSync = lastSyncDate {
-                defaults.set(lastSync, forKey: "lastSyncDate")
-            }
-            
-            defaults.synchronize()
-        }
-    }
-    
-    func checkBackgroundRefreshStatus() {
-        backgroundRefreshStatus = UIApplication.shared.backgroundRefreshStatus
-        if backgroundRefreshStatus != .available && isPollingEnabled {
-            showBackgroundRefreshAlert = true
-        }
-    }
-    
-    private func setupBackgroundRefreshObserver() {
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.backgroundRefreshStatusDidChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.checkBackgroundRefreshStatus()
-        }
-    }
-    
-    func enableNATS(_ enabled: Bool) {
-        isNATSEnabled = enabled
-        saveSettings()
-        
-        if enabled {
-            NSLog("SFTPFiles: NATS enabled - Files sync will be handled by NATS")
-        } else {
-            NSLog("SFTPFiles: NATS disabled - Files sync will use polling")
-        }
-        
-        if isPollingEnabled {
-            startPolling()
-        }
-    }
-}
-
-// MARK: - View Model
+// MARK: - Enhanced Connection View Model
 class SFTPConnectionViewModel: ObservableObject {
     @Published var connections: [SFTPConnection] = []
     @Published var showAddSheet = false
     @Published var editingConnection: SFTPConnection? = nil
-    
-    lazy var pollingManager = ConnectionPollingManager(viewModel: self)
+    @Published var syncStatus: SyncStatus = .idle
+    @Published var natsConnectionStatus: NATSConnectionStatus = .disconnected
+    @Published var lastSyncDate: Date?
 
+    // ...existing code...
+    
+    private let connectionManager = EnhancedMFTConnectionManager()
+    private let keyManager = SSHKeyManager()
+    private var syncManager: FileProviderSyncManager?
+    private var natsManager: NATSSyncManager?
+    private var natsStatusCancellable: AnyCancellable?
+    
     init() {
         loadConnections()
+        setupSyncManager()
+        setupNATSConnections()
     }
-
+    
+    private func setupSyncManager() {
+        syncManager = FileProviderSyncManager()
+        natsManager = NATSSyncManager(fileProviderManager: syncManager!)
+        // Bind NATS connection status to view model
+        natsStatusCancellable = natsManager?.$connectionStatus
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                self?.natsConnectionStatus = status
+            }
+    }
+    
+    private func setupNATSConnections() {
+        for connection in connections {
+            if connection.isNATSEnabled, let natsConfig = connection.natsConfig {
+                Task {
+                    await natsManager?.connect(to: natsConfig)
+                }
+            }
+        }
+    }
+    
     func addConnection(_ connection: SFTPConnection) {
         connections.append(connection)
         saveConnections()
         addFileProviderDomain(for: connection)
+        
+        if connection.isNATSEnabled, let natsConfig = connection.natsConfig {
+            Task {
+                await natsManager?.connect(to: natsConfig)
+            }
+        }
     }
-
+    
     func updateConnection(_ connection: SFTPConnection) {
-        if let idx = connections.firstIndex(where: { $0.id == connection.id }) {
-            connections[idx] = connection
+        if let index = connections.firstIndex(where: { $0.id == connection.id }) {
+            connections[index] = connection
             saveConnections()
             updateFileProviderDomain(for: connection)
         }
     }
-
-    func updateStatus(for connection: SFTPConnection, status: ConnectionStatus) {
-        if let idx = connections.firstIndex(where: { $0.id == connection.id }) {
-            connections[idx].status = status
-            DispatchQueue.main.async {
-                self.saveConnections()
-            }
-        }
-    }
     
-    func updateLastChecked(for connection: SFTPConnection) {
-        if let idx = connections.firstIndex(where: { $0.id == connection.id }) {
-            connections[idx].lastChecked = Date()
-            DispatchQueue.main.async {
-                self.saveConnections()
-            }
-        }
-    }
-    
-    func togglePolling(for connection: SFTPConnection, enabled: Bool) {
-        if let idx = connections.firstIndex(where: { $0.id == connection.id }) {
-            connections[idx].isPollingEnabled = enabled
-            DispatchQueue.main.async {
-                self.saveConnections()
-            }
-        }
-    }
-
     func deleteConnection(_ connection: SFTPConnection) {
         removeFileProviderDomain(for: connection)
         connections.removeAll { $0.id == connection.id }
         saveConnections()
-        print("Successfully deleted connection: \(connection.name)")
     }
     
-    func clearAllConfigurations() {
-        for connection in connections {
-            removeFileProviderDomain(for: connection)
-        }
-        
-        NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
-            guard error == nil else {
-                print("Failed to get domains: \(error!.localizedDescription)")
-                return
-            }
-            
-            for domain in domains {
-                NSFileProviderManager.remove(domain) { error in
-                    if let error = error {
-                        print("Failed to remove domain \(domain.displayName): \(error.localizedDescription)")
-                    } else {
-                        print("Successfully removed domain \(domain.displayName)")
-                    }
-                }
-            }
-        }
-        
-        connections.removeAll()
-        SFTPConnectionStore.saveConnections([])
-        print("Successfully cleared all configurations")
-    }
-
     func loadConnections() {
         connections = SFTPConnectionStore.loadConnections()
     }
-
+    
     func saveConnections() {
         SFTPConnectionStore.saveConnections(connections)
     }
-
+    
     func testConnection(_ connection: SFTPConnection, completion: @escaping (ConnectionStatus) -> Void) {
-        let sftp = MFTSftpConnection(
-            hostname: connection.host,
-            port: connection.port ?? 22,
-            username: connection.username,
-            password: connection.password
-        )
-        
-        let timeoutTask = DispatchWorkItem {
-            sftp.disconnect()
-            DispatchQueue.main.async {
-                completion(.timeout)
-            }
-        }
-        
-        DispatchQueue.global(qos: .background).async {
+        Task {
             do {
-                print("Testing connection to \(connection.host)...")
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 15.0, execute: timeoutTask)
-                
-                try sftp.connect()
-                try sftp.authenticate()
-                
-                if !connection.remotePath.isEmpty {
-                    _ = try sftp.contentsOfDirectory(atPath: connection.remotePath, maxItems: 1)
-                }
-                
-                timeoutTask.cancel()
-                sftp.disconnect()
-                
-                print("Connection test successful for \(connection.host)")
-                
-                DispatchQueue.main.async {
-                    completion(.connected)
+                let status = try await connectionManager.testConnection(connection)
+                await MainActor.run {
+                    completion(status)
                 }
             } catch {
-                timeoutTask.cancel()
-                sftp.disconnect()
-                
-                print("Connection test failed for \(connection.host): \(error.localizedDescription)")
-                
-                DispatchQueue.main.async {
+                await MainActor.run {
                     completion(.error)
                 }
             }
         }
+    }
+    
+    func updateStatus(for connection: SFTPConnection, status: ConnectionStatus) {
+        if let index = connections.firstIndex(where: { $0.id == connection.id }) {
+            connections[index].status = status
+            saveConnections()
+        }
+    }
+    
+    func updateLastChecked(for connection: SFTPConnection) {
+        if let index = connections.firstIndex(where: { $0.id == connection.id }) {
+            connections[index].lastChecked = Date()
+            saveConnections()
+        }
+    }
+    
+    func triggerManualSync(for connection: SFTPConnection) {
+        Task {
+            await syncManager?.triggerManualSync(for: connection)
+        }
+    }
+    
+    func triggerManualSyncAll() {
+        for connection in connections {
+            Task {
+                await syncManager?.triggerManualSync(for: connection)
+            }
+        }
+    }
+    
+    func clearAllConfigurations() async {
+        for connection in connections {
+            removeFileProviderDomain(for: connection)
+        }
+        
+        await withCheckedContinuation { continuation in
+            NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
+                guard error == nil else {
+                    continuation.resume()
+                    return
+                }
+                let group = DispatchGroup()
+                for domain in domains {
+                    group.enter()
+                    NSFileProviderManager.remove(domain) { error in
+                        if let error = error {
+                            print("Failed to remove domain \(domain.displayName): \(error.localizedDescription)")
+                        }
+                        group.leave()
+                    }
+                }
+                group.notify(queue: .main) {
+                    continuation.resume()
+                }
+            }
+        }
+        if let natsManager = natsManager {
+            await natsManager.disconnect()
+        }
+        connections.removeAll()
+        SFTPConnectionStore.saveConnections([])
+    }
+    
+    func getAvailableKeyPairs() -> [SSHKeyPair] {
+        return keyManager.loadKeyPairs()
+    }
+    
+    func deleteKeyPair(_ keyPair: SSHKeyPair) throws {
+        try keyManager.deleteKeyPair(id: keyPair.id)
+        
+        // Update any connections using this key
+        for i in 0..<connections.count {
+            if connections[i].keyPairId == keyPair.id {
+                connections[i].keyPairId = nil
+                connections[i].authMethod = .password
+            }
+        }
+        saveConnections()
     }
     
     // MARK: - File Provider Domain Management
@@ -403,16 +188,14 @@ class SFTPConnectionViewModel: ObservableObject {
             identifier: NSFileProviderDomainIdentifier(rawValue: connection.id.uuidString),
             displayName: connection.name
         )
+        
         NSFileProviderManager.add(domain) { error in
             DispatchQueue.main.async {
                 if let error = error {
                     let nsError = error as NSError
-                    if nsError.localizedDescription.contains("already exists") ||
-                       nsError.localizedDescription.contains("duplicate") {
-                        NSLog("Domain '\(connection.name)' already exists, which is fine")
-                        return
+                    if !nsError.localizedDescription.contains("already exists") {
+                        NSLog("Failed to add domain: \(error.localizedDescription)")
                     }
-                    NSLog("Failed to add domain: \(error.localizedDescription)")
                 } else {
                     NSLog("Successfully added domain for \(connection.name)")
                 }
@@ -426,33 +209,13 @@ class SFTPConnectionViewModel: ObservableObject {
             displayName: connection.name
         )
         
-        // Force refresh the domain
         NSFileProviderManager.remove(domain) { _ in
-            // Small delay to ensure clean removal
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 NSFileProviderManager.add(domain) { error in
-                    DispatchQueue.main.async {
-                        if let error = error {
-                            let nsError = error as NSError
-                            if nsError.localizedDescription.contains("already exists") ||
-                               nsError.localizedDescription.contains("duplicate") {
-                                NSLog("Domain '\(connection.name)' already exists after update")
-                                return
-                            }
-                            NSLog("Failed to update domain: \(error.localizedDescription)")
-                        } else {
-                            NSLog("Successfully updated domain for \(connection.name)")
-                            
-                            // Trigger immediate sync after domain update
-                            let manager = NSFileProviderManager(for: domain)
-                            manager?.signalEnumerator(for: .rootContainer) { error in
-                                if let error = error {
-                                    NSLog("Failed to signal enumerator after update: \(error.localizedDescription)")
-                                } else {
-                                    NSLog("Successfully signaled enumerator after domain update")
-                                }
-                            }
-                        }
+                    if let error = error {
+                        NSLog("Failed to update domain: \(error.localizedDescription)")
+                    } else {
+                        NSLog("Successfully updated domain for \(connection.name)")
                     }
                 }
             }
@@ -464,31 +227,29 @@ class SFTPConnectionViewModel: ObservableObject {
             identifier: NSFileProviderDomainIdentifier(rawValue: connection.id.uuidString),
             displayName: connection.name
         )
+        
         NSFileProviderManager.remove(domain) { error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    let nsError = error as NSError
-                    if !nsError.localizedDescription.contains("not found") &&
-                       nsError.code != NSFileProviderError.providerDomainNotFound.rawValue {
-                        NSLog("Failed to remove domain '\(connection.name)': \(error.localizedDescription)")
-                    }
-                } else {
-                    NSLog("Successfully removed domain '\(connection.name)' from Files app")
+            if let error = error {
+                let nsError = error as NSError
+                if nsError.code != NSFileProviderError.providerDomainNotFound.rawValue {
+                    NSLog("Failed to remove domain: \(error.localizedDescription)")
                 }
+            } else {
+                NSLog("Successfully removed domain for \(connection.name)")
             }
         }
     }
 }
 
-// MARK: - Main Content View
+// MARK: - Enhanced Content View
 struct ContentView: View {
-    @EnvironmentObject private var viewModel: SFTPConnectionViewModel
+    @StateObject private var viewModel = SFTPConnectionViewModel()
     @State private var showingSettings = false
+    @State private var showingSSHKeys = false
 
     var body: some View {
         NavigationView {
             ZStack {
-                // Background gradient
                 LinearGradient(
                     gradient: Gradient(colors: [
                         Color(.systemBackground),
@@ -499,37 +260,31 @@ struct ContentView: View {
                     endPoint: .bottomTrailing
                 )
                 .ignoresSafeArea()
-                
+
                 if viewModel.connections.isEmpty {
-                    // Empty state
                     VStack(spacing: 24) {
                         Spacer()
-                        
                         ZStack {
                             Circle()
                                 .fill(Color.accentColor.opacity(0.1))
                                 .frame(width: 120, height: 120)
-                            
                             Image(systemName: "externaldrive.badge.plus")
                                 .font(.system(size: 48))
                                 .foregroundColor(.accentColor)
                                 .fontWeight(.medium)
                         }
-                        
                         VStack(spacing: 8) {
                             Text("No SFTP Connections")
                                 .font(.title2)
                                 .fontWeight(.bold)
                                 .foregroundColor(.primary)
-                            
-                            Text("Add your first SFTP connection to access files through the Files app")
+                            Text("Add your first SFTP connection to access files through the Files app with real-time sync")
                                 .font(.body)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 32)
                                 .lineLimit(3)
                         }
-                        
                         Button(action: { viewModel.showAddSheet = true }) {
                             HStack(spacing: 8) {
                                 Image(systemName: "plus.circle.fill")
@@ -546,7 +301,6 @@ struct ContentView: View {
                             .shadow(color: Color.accentColor.opacity(0.3), radius: 4, x: 0, y: 2)
                         }
                         .buttonStyle(BorderlessButtonStyle())
-                        
                         Spacer()
                     }
                     .padding()
@@ -554,28 +308,20 @@ struct ContentView: View {
                     ScrollView {
                         LazyVStack(spacing: 12) {
                             ForEach(viewModel.connections) { connection in
-                                ConnectionRow(
+                                FoldableConnectionRow(
                                     connection: connection,
-                                    onEdit: {
-                                        viewModel.editingConnection = connection
-                                    },
-                                    onDelete: {
-                                        viewModel.deleteConnection(connection)
-                                    }
+                                    onEdit: { viewModel.editingConnection = connection },
+                                    onDelete: { viewModel.deleteConnection(connection) },
+                                    onManualSync: { viewModel.triggerManualSync(for: connection) }
                                 )
                             }
-                            
-                            // Add Connection button below all connections
                             VStack(spacing: 16) {
-                                Divider()
-                                    .padding(.horizontal, 16)
-                                
+                                Divider().padding(.horizontal, 16)
                                 Button(action: { viewModel.showAddSheet = true }) {
                                     HStack(spacing: 8) {
                                         Image(systemName: "plus.circle.fill")
                                             .font(.system(size: 16, weight: .medium))
-                                        Text("Add Connection")
-                                            .fontWeight(.semibold)
+                                        Text("Add Connection").fontWeight(.semibold)
                                     }
                                     .font(.body)
                                     .foregroundColor(.white)
@@ -592,27 +338,25 @@ struct ContentView: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 8)
                     }
-                    .refreshable {
-                        refreshAllConnections()
-                    }
+                    .refreshable { viewModel.triggerManualSyncAll() }
                 }
             }
             .navigationTitle("SFTPFiles")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showingSettings = true }) {
-                        Image(systemName: "gearshape")
-                            .foregroundColor(.accentColor)
+                    HStack(spacing: 16) {
+                        Button(action: { showingSSHKeys = true }) {
+                            Image(systemName: "key").foregroundColor(.accentColor)
+                        }
+                        Button(action: { showingSettings = true }) {
+                            Image(systemName: "gearshape").foregroundColor(.accentColor)
+                        }
                     }
                 }
-                
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { 
-                        viewModel.pollingManager.forceRefreshAllConnections()
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                            .foregroundColor(.accentColor)
+                    Button(action: { viewModel.triggerManualSyncAll() }) {
+                        Image(systemName: "arrow.clockwise").foregroundColor(.accentColor)
                     }
                 }
             }
@@ -625,40 +369,245 @@ struct ContentView: View {
             .sheet(isPresented: $showingSettings) {
                 EnhancedSettingsView(viewModel: viewModel)
             }
+            .sheet(isPresented: $showingSSHKeys) {
+                SSHKeyManagerView(viewModel: viewModel)
+            }
         }
         .navigationViewStyle(StackNavigationViewStyle())
     }
+// MARK: - Foldable Connection Row (Old App Style)
+struct FoldableConnectionRow: View {
+    let connection: SFTPConnection
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    let onManualSync: () -> Void
+    @State private var isExpanded = false
+    @State private var showingDeleteAlert = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(connection.status == .connected || connection.status == .valid ? Color.green.opacity(0.15) : Color.gray.opacity(0.15))
+                        .frame(width: 48, height: 48)
+                    Image(systemName: connection.status == .connected || connection.status == .valid ? "externaldrive.connected.to.line.below" : "externaldrive.badge.xmark")
+                        .foregroundColor(connection.status == .connected || connection.status == .valid ? .green : .gray)
+                        .font(.title2)
+                }
+                Text(connection.name)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                Spacer()
+                Button(action: { isExpanded.toggle() }) {
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .foregroundColor(.accentColor)
+                        .padding(8)
+                }
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                        .foregroundColor(.accentColor)
+                        .padding(8)
+                }
+                Button(action: { showingDeleteAlert = true }) {
+                    Image(systemName: "trash")
+                        .foregroundColor(.red)
+                        .padding(8)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: isExpanded ? 0 : 12)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+            )
+            .alert("Delete Connection", isPresented: $showingDeleteAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) { onDelete() }
+            } message: {
+                Text("Are you sure you want to delete '\(connection.name)'? This will remove the connection from the Files app and cannot be undone.")
+            }
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 12) {
+                    Divider().padding(.horizontal, 8)
+                    HStack {
+                        Text("Status:")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Text(connection.status.displayName)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                    }
+                    HStack {
+                        Text("Host:")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Text("\(connection.username)@\(connection.host):\(connection.port ?? 22)")
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                    }
+                    if let remotePath = connection.remotePath, !remotePath.isEmpty {
+                        HStack {
+                            Text("Remote Path:")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Text(remotePath)
+                                .font(.subheadline)
+                                .foregroundColor(.primary)
+                        }
+                    }
+                    HStack {
+                        Text("Auth:")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Text(connection.authMethod.displayName)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                    }
+                    if connection.isNATSEnabled {
+                        HStack {
+                            Text("Real-time Sync:")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Text("Enabled")
+                                .font(.subheadline)
+                                .foregroundColor(.green)
+                        }
+                        Button(action: onManualSync) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Manual Sync")
+                            }
+                            .font(.subheadline)
+                            .foregroundColor(.accentColor)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 12)
+                            .background(Color.accentColor.opacity(0.08))
+                            .cornerRadius(8)
+                        }
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 0)
+                        .fill(Color(.systemGray6))
+                )
+            }
+        }
+        .cornerRadius(12)
+        .padding(.vertical, 2)
+    }
+}
+}
+
+// MARK: - Supporting Views that work with existing structure
+struct SyncStatusHeader: View {
+    let syncStatus: SyncStatus
+    let natsStatus: NATSConnectionStatus
+    let lastSyncDate: Date?
+    let onManualSync: () -> Void
     
-    private func refreshAllConnections() {
-        NSLog("SFTPFiles: Manual refresh triggered")
-        viewModel.pollingManager.manualSync()
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Real-time Sync")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    HStack(spacing: 12) {
+                        // NATS Status
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(natsStatusColor)
+                                .frame(width: 8, height: 8)
+                            
+                            Text(natsStatus.displayName)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        if let lastSync = lastSyncDate {
+                            Text("Last sync: \(lastSync, formatter: relativeDateFormatter)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                Button(action: onManualSync) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.accentColor)
+                }
+                .buttonStyle(BorderlessButtonStyle())
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.systemGray6))
+        )
+    }
+    
+    private var natsStatusColor: Color {
+        switch natsStatus {
+        case .disconnected: return .gray
+        case .connecting: return .blue
+        case .connected: return .green
+        case .error: return .red
+        }
+    }
+    
+    private var relativeDateFormatter: RelativeDateTimeFormatter {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
     }
 }
 
-// MARK: - Connection Row View
-struct ConnectionRow: View {
+struct EnhancedConnectionRow: View {
     let connection: SFTPConnection
     let onEdit: () -> Void
-    let onDelete: (() -> Void)?
+    let onDelete: () -> Void
+    let onManualSync: () -> Void
+    
     @State private var showingDeleteAlert = false
-    @EnvironmentObject private var viewModel: SFTPConnectionViewModel
     
     var body: some View {
         HStack(spacing: 16) {
-            // Connection Icon
+            // Connection Icon with Status
             ZStack {
                 Circle()
                     .fill(statusColor.opacity(0.15))
                     .frame(width: 56, height: 56)
                 
-                Image(systemName: connection.status == .checking ? "arrow.triangle.2.circlepath" : "externaldrive.connected.to.line.below")
+                Image(systemName: connectionIcon)
                     .foregroundColor(statusColor)
                     .font(.title2)
                     .fontWeight(.medium)
-                    .rotationEffect(connection.status == .checking ? .degrees(0) : .degrees(0))
-                    .animation(connection.status == .checking ? 
-                        Animation.linear(duration: 1.0).repeatForever(autoreverses: false) : 
-                        .default, value: connection.status)
+                
+                // NATS indicator
+                if connection.isNATSEnabled {
+                    Circle()
+                        .fill(Color.blue)
+                        .frame(width: 16, height: 16)
+                        .overlay(
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 8))
+                                .foregroundColor(.white)
+                        )
+                        .offset(x: 20, y: -20)
+                }
             }
             
             // Connection Info
@@ -674,37 +623,38 @@ struct ConnectionRow: View {
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                 
-                HStack(spacing: 12) {
-                    if !connection.remotePath.isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: "folder")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(connection.remotePath)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
+                HStack(spacing: 8) {
+                    // Auth method badge
+                    Text(connection.authMethod.displayName)
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.1))
+                        .foregroundColor(.blue)
+                        .cornerRadius(4)
+                    
+                    // NATS badge
+                    if connection.isNATSEnabled {
+                        Text("Real-time")
+                            .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.green.opacity(0.1))
+                            .foregroundColor(.green)
+                            .cornerRadius(4)
                     }
                     
                     Spacer()
                     
-                    // Status Badge
-                    VStack(alignment: .trailing, spacing: 2) {
-                        HStack(spacing: 4) {
-                            Image(systemName: statusIcon)
-                                .font(.caption)
-                                .foregroundColor(statusColor)
-                            Text(connection.status.displayName)
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(statusColor)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                    // Status badge
+                    Text(connection.status.displayName)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
                         .background(statusColor.opacity(0.1))
-                        .cornerRadius(8)
-                    }
+                        .foregroundColor(statusColor)
+                        .cornerRadius(4)
                 }
             }
             
@@ -712,31 +662,37 @@ struct ConnectionRow: View {
             
             // Action Buttons
             HStack(spacing: 8) {
-                Button(action: onEdit) {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.accentColor)
-                        .cornerRadius(10)
-                        .shadow(color: Color.accentColor.opacity(0.3), radius: 2, x: 0, y: 1)
-                }
-                .buttonStyle(BorderlessButtonStyle())
-                
-                if onDelete != nil {
-                    Button(action: {
-                        showingDeleteAlert = true
-                    }) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 16, weight: .medium))
+                if connection.isNATSEnabled {
+                    Button(action: onManualSync) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color.red)
-                            .cornerRadius(10)
-                            .shadow(color: Color.red.opacity(0.3), radius: 2, x: 0, y: 1)
+                            .frame(width: 32, height: 32)
+                            .background(Color.blue)
+                            .cornerRadius(8)
                     }
                     .buttonStyle(BorderlessButtonStyle())
                 }
+                
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color.accentColor)
+                        .cornerRadius(8)
+                }
+                .buttonStyle(BorderlessButtonStyle())
+                
+                Button(action: { showingDeleteAlert = true }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color.red)
+                        .cornerRadius(8)
+                }
+                .buttonStyle(BorderlessButtonStyle())
             }
         }
         .padding(.horizontal, 16)
@@ -749,7 +705,7 @@ struct ConnectionRow: View {
         .alert("Delete Connection", isPresented: $showingDeleteAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
-                onDelete?()
+                onDelete()
             }
         } message: {
             Text("Are you sure you want to delete '\(connection.name)'? This will remove the connection from the Files app and cannot be undone.")
@@ -759,20 +715,51 @@ struct ConnectionRow: View {
     private var statusColor: Color {
         switch connection.status {
         case .connected, .valid: return .green
-        case .disconnected, .invalid, .error: return .red
-        case .checking: return .blue
+        case .connecting, .checking: return .blue
+        case .disconnected, .invalid, .error, .authFailed, .syncError: return .red
         case .timeout: return .orange
         case .unknown: return .gray
         }
     }
     
-    private var statusIcon: String {
+    private var connectionIcon: String {
         switch connection.status {
-        case .connected, .valid: return "checkmark.circle.fill"
-        case .disconnected, .invalid, .error: return "xmark.octagon.fill"
-        case .checking: return "arrow.triangle.2.circlepath"
-        case .timeout: return "clock.badge.exclamationmark"
-        case .unknown: return "questionmark.circle"
+        case .connected, .valid: return "externaldrive.connected.to.line.below"
+        case .connecting, .checking: return "arrow.triangle.2.circlepath"
+        case .disconnected, .invalid, .error, .authFailed, .syncError: return "externaldrive.badge.xmark"
+        case .timeout: return "externaldrive.badge.timemachine"
+        case .unknown: return "externaldrive.badge.questionmark"
+        }
+    }
+}
+
+// MARK: - Supporting Enums
+enum SyncStatus {
+    case idle
+    case syncing
+    case error
+    
+    var displayName: String {
+        switch self {
+        case .idle: return "Idle"
+        case .syncing: return "Syncing..."
+        case .error: return "Error"
+        }
+    }
+}
+
+enum NATSConnectionStatus {
+    case disconnected
+    case connecting
+    case connected
+    case error
+    
+    var displayName: String {
+        switch self {
+        case .disconnected: return "Disconnected"
+        case .connecting: return "Connecting..."
+        case .connected: return "Connected"
+        case .error: return "Error"
         }
     }
 }
