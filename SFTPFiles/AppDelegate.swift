@@ -11,10 +11,8 @@ import FileProvider
 class AppDelegate: UIResponder, UIApplicationDelegate {
     
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        
-        // Clean up old domains first, then register the correct one
-        cleanupOldDomains()
-        
+        // Register the correct File Provider domain only
+        registerFileProviderDomain()
         return true
     }
     
@@ -22,65 +20,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
         return UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
     }
-    
-    // MARK: - File Provider Domain Management
-    
-    private func cleanupOldDomains() {
-        NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
-            if let error = error {
-                print("Error getting domains for cleanup: \(error)")
-                self.registerFileProviderDomain()
-                return
-            }
-            
-            print("Found \(domains.count) existing domains for cleanup:")
-            for domain in domains {
-                print("- \(domain.displayName) (\(domain.identifier.rawValue))")
-            }
-            
-            // List of old domain identifiers to remove
-            let oldDomainIdentifiers = [
-                "com.mansi.sftpfiles.provider",
-                "com.mansi.sftpfiles.extension",
-                "com.mansi.sftpfiles.fileprovider"
-            ]
-            
-            // Remove any old domains
-            let domainsToRemove = domains.filter { domain in
-                oldDomainIdentifiers.contains(domain.identifier.rawValue)
-            }
-            
-            if domainsToRemove.isEmpty {
-                print("No old domains to clean up")
-                self.registerFileProviderDomain()
-                return
-            }
-            
-            print("Removing \(domainsToRemove.count) old domains...")
-            let group = DispatchGroup()
-            
-            for domain in domainsToRemove {
-                group.enter()
-                print("Removing old domain: \(domain.displayName) (\(domain.identifier.rawValue))")
-                NSFileProviderManager.remove(domain) { removeError in
-                    if let removeError = removeError {
-                        print("Error removing old domain \(domain.identifier.rawValue): \(removeError)")
-                    } else {
-                        print("Successfully removed old domain: \(domain.identifier.rawValue)")
-                    }
-                    group.leave()
-                }
-            }
-            
-            group.notify(queue: .main) {
-                print("Finished cleaning up old domains")
-                // Wait a moment then register the correct domain
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    self.registerFileProviderDomain()
-                }
-            }
-        }
-    }
+
     
     private func registerFileProviderDomain() {
         // Use a domain identifier that matches the app group pattern

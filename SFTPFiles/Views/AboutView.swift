@@ -41,9 +41,16 @@ struct AboutView: View {
                 Text("Built with MFT SFTP Framework")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                
+
                 Link("GitHub Repository", destination: URL(string: "https://github.com/mplpl/mft")!)
                     .font(.caption)
+
+                Divider()
+                Text("Disclaimer: This app is not a full iCloud solution. SFTP integration has its caveats and limitations. We are not responsible for any data loss, corruption, or issues that may arise from using this app. Please ensure you have backups of your important files.")
+                    .font(.footnote)
+                    .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 8)
             }
         }
         .padding()
