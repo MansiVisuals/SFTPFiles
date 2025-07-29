@@ -11,6 +11,15 @@ import Security
 class KeychainService {
     private let service = "com.mansi.sftpfiles"
     
+    // Use dynamic team identifier instead of hardcoded access group
+    private var accessGroup: String {
+        guard let teamIdentifier = Bundle.main.object(forInfoDictionaryKey: "AppIdentifierPrefix") as? String else {
+            // Fallback for development
+            return "group.mansi.SFTPFiles"
+        }
+        return "\(teamIdentifier)group.mansi.SFTPFiles"
+    }
+    
     func store(password: String, for connectionId: UUID) {
         let data = password.data(using: .utf8)!
         let account = connectionId.uuidString
@@ -20,7 +29,7 @@ class KeychainService {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
-            kSecAttrAccessGroup as String: "group.mansi.SFTPFiles"
+            kSecAttrAccessGroup as String: accessGroup
         ]
         
         // Delete existing item first
@@ -32,7 +41,8 @@ class KeychainService {
         if status == errSecSuccess {
             print("Successfully stored password for connection: \(account)")
         } else {
-            print("Failed to store password in keychain: \(status) (\(SecCopyErrorMessageString(status, nil) ?? "Unknown error" as CFString))")
+            let errorMessage = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error"
+            print("Failed to store password in keychain: \(status) - \(errorMessage)")
         }
     }
     
@@ -45,7 +55,7 @@ class KeychainService {
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecAttrAccessGroup as String: "group.mansi.SFTPFiles"
+            kSecAttrAccessGroup as String: accessGroup
         ]
         
         var result: AnyObject?
@@ -55,7 +65,8 @@ class KeychainService {
               let data = result as? Data,
               let password = String(data: data, encoding: .utf8) else {
             if status != errSecItemNotFound {
-                print("Failed to retrieve password from keychain: \(status)")
+                let errorMessage = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error"
+                print("Failed to retrieve password from keychain: \(status) - \(errorMessage)")
             }
             return nil
         }
@@ -70,7 +81,7 @@ class KeychainService {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecAttrAccessGroup as String: "group.mansi.SFTPFiles"
+            kSecAttrAccessGroup as String: accessGroup
         ]
         
         let status = SecItemDelete(query as CFDictionary)
@@ -78,7 +89,8 @@ class KeychainService {
         if status == errSecSuccess {
             print("Successfully deleted password for connection: \(account)")
         } else if status != errSecItemNotFound {
-            print("Failed to delete password from keychain: \(status)")
+            let errorMessage = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error"
+            print("Failed to delete password from keychain: \(status) - \(errorMessage)")
         }
     }
     
@@ -98,7 +110,7 @@ class KeychainService {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: keyData,
-            kSecAttrAccessGroup as String: "group.mansi.SFTPFiles"
+            kSecAttrAccessGroup as String: accessGroup
         ]
         
         // Delete existing item first
@@ -110,7 +122,8 @@ class KeychainService {
         if status == errSecSuccess {
             print("Successfully stored private key for connection: \(connectionId)")
         } else {
-            print("Failed to store private key in keychain: \(status)")
+            let errorMessage = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error"
+            print("Failed to store private key in keychain: \(status) - \(errorMessage)")
         }
     }
     
@@ -123,7 +136,7 @@ class KeychainService {
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecAttrAccessGroup as String: "group.mansi.SFTPFiles"
+            kSecAttrAccessGroup as String: accessGroup
         ]
         
         var result: AnyObject?
@@ -131,6 +144,10 @@ class KeychainService {
         
         guard status == errSecSuccess,
               let data = result as? Data else {
+            if status != errSecItemNotFound {
+                let errorMessage = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error"
+                print("Failed to retrieve private key from keychain: \(status) - \(errorMessage)")
+            }
             return nil
         }
         
@@ -144,7 +161,7 @@ class KeychainService {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecAttrAccessGroup as String: "group.mansi.SFTPFiles"
+            kSecAttrAccessGroup as String: accessGroup
         ]
         
         SecItemDelete(query as CFDictionary)

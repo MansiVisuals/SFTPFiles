@@ -8,50 +8,36 @@
 import FileProvider
 
 class FileProviderEnumerator: NSObject, NSFileProviderEnumerator {
-    
     private let enumeratedItemIdentifier: NSFileProviderItemIdentifier
-    private let anchor = NSFileProviderSyncAnchor("an anchor".data(using: .utf8)!)
+    private let sftpBackend: SFTPBackend
     
-    init(enumeratedItemIdentifier: NSFileProviderItemIdentifier) {
+    init(enumeratedItemIdentifier: NSFileProviderItemIdentifier, sftpBackend: SFTPBackend) {
         self.enumeratedItemIdentifier = enumeratedItemIdentifier
+        self.sftpBackend = sftpBackend
         super.init()
     }
-
+    
     func invalidate() {
-        // TODO: perform invalidation of server connection if necessary
+        // Clean up resources
     }
-
+    
     func enumerateItems(for observer: NSFileProviderEnumerationObserver, startingAt page: NSFileProviderPage) {
-        /* TODO:
-         - inspect the page to determine whether this is an initial or a follow-up request
-         
-         If this is an enumerator for a directory, the root container or all directories:
-         - perform a server request to fetch directory contents
-         If this is an enumerator for the active set:
-         - perform a server request to update your local database
-         - fetch the active set from your local database
-         
-         - inform the observer about the items returned by the server (possibly multiple times)
-         - inform the observer that you are finished with this page
-         */
-        observer.didEnumerate([FileProviderItem(identifier: NSFileProviderItemIdentifier("a file"))])
-        observer.finishEnumerating(upTo: nil)
+        sftpBackend.enumerateItems(
+            for: enumeratedItemIdentifier,
+            observer: observer,
+            startingAt: page
+        )
     }
     
     func enumerateChanges(for observer: NSFileProviderChangeObserver, from anchor: NSFileProviderSyncAnchor) {
-        /* TODO:
-         - query the server for updates since the passed-in sync anchor
-         
-         If this is an enumerator for the active set:
-         - note the changes in your local database
-         
-         - inform the observer about item deletions and updates (modifications + insertions)
-         - inform the observer when you have finished enumerating up to a subsequent sync anchor
-         */
-        observer.finishEnumeratingChanges(upTo: anchor, moreComing: false)
+        sftpBackend.enumerateChanges(
+            for: enumeratedItemIdentifier,
+            observer: observer,
+            from: anchor
+        )
     }
-
+    
     func currentSyncAnchor(completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void) {
-        completionHandler(anchor)
+        sftpBackend.currentSyncAnchor(for: enumeratedItemIdentifier, completionHandler: completionHandler)
     }
 }

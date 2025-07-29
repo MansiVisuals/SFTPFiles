@@ -26,13 +26,14 @@ class SFTPService {
                     try sftp.connect()
                     try sftp.authenticate()
                     
-                    // Test basic directory listing
+                    // Test basic directory listing to ensure we can access files
                     let _ = try sftp.contentsOfDirectory(atPath: "/", maxItems: 1)
                     
                     sftp.disconnect()
+                    print("Successfully tested connection to \(connection.hostname)")
                     continuation.resume(returning: true)
                 } catch {
-                    print("SFTP test connection error: \(error)")
+                    print("SFTP test connection failed for \(connection.hostname): \(error)")
                     continuation.resume(returning: false)
                 }
             }
@@ -50,6 +51,7 @@ class SFTPService {
         try sftp.connect()
         try sftp.authenticate()
         
+        print("Successfully connected to \(connection.hostname)")
         return sftp
     }
     
@@ -57,15 +59,38 @@ class SFTPService {
         return try sftp.contentsOfDirectory(atPath: path, maxItems: 0)
     }
     
-    // Fixed: Change parameter types from Int64 to UInt64 to match MFT library
     func downloadFile(sftp: MFTSftpConnection, remotePath: String, to localURL: URL, progressHandler: @escaping (UInt64, UInt64) -> Bool) throws {
         let outputStream = OutputStream(url: localURL, append: false)
-        try sftp.contents(atPath: remotePath, toStream: outputStream!, fromPosition: 0, progress: progressHandler)
+        guard let stream = outputStream else {
+            throw NSError(domain: "SFTPService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not create output stream"])
+        }
+        
+        try sftp.contents(atPath: remotePath, toStream: stream, fromPosition: 0, progress: progressHandler)
     }
     
-    // Fixed: Change parameter type from Int64 to UInt64 to match MFT library
     func uploadFile(sftp: MFTSftpConnection, from localURL: URL, to remotePath: String, progressHandler: @escaping (UInt64) -> Bool) throws {
         let inputStream = InputStream(url: localURL)
-        try sftp.write(stream: inputStream!, toFileAtPath: remotePath, append: false, progress: progressHandler)
+        guard let stream = inputStream else {
+            throw NSError(domain: "SFTPService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not create input stream"])
+        }
+        
+        try sftp.write(stream: stream, toFileAtPath: remotePath, append: false, progress: progressHandler)
+    }
+    
+    // MARK: - Connection Status Management
+    
+    func validateConnection(_ connection: SFTPConnection, password: String) async -> ConnectionState {
+        do {
+            let sftp = try connect(to: connection, password: password)
+            
+            // Test directory listing
+            let _ = try listDirectory(sftp: sftp, path: "/")
+            
+            sftp.disconnect()
+            return .connected
+        } catch {
+            print("Connection validation failed for \(connection.hostname): \(error)")
+            return .error
+        }
     }
 }

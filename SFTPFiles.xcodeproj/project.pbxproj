@@ -6,6 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1392DB8E2E38232500C55169 /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1392DB8D2E38232500C55169 /* UniformTypeIdentifiers.framework */; };
+		1392DB9A2E38232500C55169 /* SFTPFilesFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1392DB8B2E38232500C55169 /* SFTPFilesFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1392DBEB2E3826AD00C55169 /* mft.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1392DBEA2E3826AD00C55169 /* mft.xcframework */; };
+		1392DBEC2E3826AD00C55169 /* mft.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 1392DBEA2E3826AD00C55169 /* mft.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		1392DBEE2E3826CC00C55169 /* mft.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1392DBEA2E3826AD00C55169 /* mft.xcframework */; };
+		1392DBEF2E3826CC00C55169 /* mft.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 1392DBEA2E3826AD00C55169 /* mft.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		1392DB6B2E3822C200C55169 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -21,13 +30,76 @@
 			remoteGlobalIDString = 1392DB5C2E3822C100C55169;
 			remoteInfo = SFTPFiles;
 		};
+		1392DB982E38232500C55169 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1392DB552E3822C100C55169 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1392DB8A2E38232500C55169;
+			remoteInfo = SFTPFilesFileProvider;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		1392DB9F2E38232500C55169 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				1392DB9A2E38232500C55169 /* SFTPFilesFileProvider.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1392DBED2E3826AD00C55169 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				1392DBEC2E3826AD00C55169 /* mft.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1392DBF02E3826CC00C55169 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				1392DBEF2E3826CC00C55169 /* mft.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		1392DB5D2E3822C100C55169 /* SFTPFiles.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SFTPFiles.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1392DB6A2E3822C200C55169 /* SFTPFilesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SFTPFilesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1392DB742E3822C200C55169 /* SFTPFilesUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SFTPFilesUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1392DB8B2E38232500C55169 /* SFTPFilesFileProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SFTPFilesFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		1392DB8D2E38232500C55169 /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
+		1392DBEA2E3826AD00C55169 /* mft.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = mft.xcframework; path = "../../mft/mft 2025-07-28 22-28-21/mft.xcframework"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1392DB9B2E38232500C55169 /* Exceptions for "SFTPFilesFileProvider" folder in "SFTPFilesFileProvider" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 1392DB8A2E38232500C55169 /* SFTPFilesFileProvider */;
+		};
+		1392DC132E38347600C55169 /* Exceptions for "Shared" folder in "SFTPFilesFileProvider" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				SharedModels.swift,
+			);
+			target = 1392DB8A2E38232500C55169 /* SFTPFilesFileProvider */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1392DB5F2E3822C100C55169 /* SFTPFiles */ = {
@@ -45,6 +117,22 @@
 			path = SFTPFilesUITests;
 			sourceTree = "<group>";
 		};
+		1392DB8F2E38232500C55169 /* SFTPFilesFileProvider */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1392DB9B2E38232500C55169 /* Exceptions for "SFTPFilesFileProvider" folder in "SFTPFilesFileProvider" target */,
+			);
+			path = SFTPFilesFileProvider;
+			sourceTree = "<group>";
+		};
+		1392DBD92E3824C400C55169 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1392DC132E38347600C55169 /* Exceptions for "Shared" folder in "SFTPFilesFileProvider" target */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,6 +140,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1392DBEE2E3826CC00C55169 /* mft.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -69,15 +158,27 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		1392DB882E38232500C55169 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1392DB8E2E38232500C55169 /* UniformTypeIdentifiers.framework in Frameworks */,
+				1392DBEB2E3826AD00C55169 /* mft.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		1392DB542E3822C100C55169 = {
 			isa = PBXGroup;
 			children = (
+				1392DBD92E3824C400C55169 /* Shared */,
 				1392DB5F2E3822C100C55169 /* SFTPFiles */,
 				1392DB6D2E3822C200C55169 /* SFTPFilesTests */,
 				1392DB772E3822C200C55169 /* SFTPFilesUITests */,
+				1392DB8F2E38232500C55169 /* SFTPFilesFileProvider */,
+				1392DB8C2E38232500C55169 /* Frameworks */,
 				1392DB5E2E3822C100C55169 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -88,8 +189,18 @@
 				1392DB5D2E3822C100C55169 /* SFTPFiles.app */,
 				1392DB6A2E3822C200C55169 /* SFTPFilesTests.xctest */,
 				1392DB742E3822C200C55169 /* SFTPFilesUITests.xctest */,
+				1392DB8B2E38232500C55169 /* SFTPFilesFileProvider.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		1392DB8C2E38232500C55169 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				1392DBEA2E3826AD00C55169 /* mft.xcframework */,
+				1392DB8D2E38232500C55169 /* UniformTypeIdentifiers.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -102,13 +213,17 @@
 				1392DB592E3822C100C55169 /* Sources */,
 				1392DB5A2E3822C100C55169 /* Frameworks */,
 				1392DB5B2E3822C100C55169 /* Resources */,
+				1392DB9F2E38232500C55169 /* Embed Foundation Extensions */,
+				1392DBF02E3826CC00C55169 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				1392DB992E38232500C55169 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				1392DB5F2E3822C100C55169 /* SFTPFiles */,
+				1392DBD92E3824C400C55169 /* Shared */,
 			);
 			name = SFTPFiles;
 			packageProductDependencies = (
@@ -163,6 +278,29 @@
 			productReference = 1392DB742E3822C200C55169 /* SFTPFilesUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		1392DB8A2E38232500C55169 /* SFTPFilesFileProvider */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1392DB9C2E38232500C55169 /* Build configuration list for PBXNativeTarget "SFTPFilesFileProvider" */;
+			buildPhases = (
+				1392DB872E38232500C55169 /* Sources */,
+				1392DB882E38232500C55169 /* Frameworks */,
+				1392DB892E38232500C55169 /* Resources */,
+				1392DBED2E3826AD00C55169 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				1392DB8F2E38232500C55169 /* SFTPFilesFileProvider */,
+			);
+			name = SFTPFilesFileProvider;
+			packageProductDependencies = (
+			);
+			productName = SFTPFilesFileProvider;
+			productReference = 1392DB8B2E38232500C55169 /* SFTPFilesFileProvider.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -184,6 +322,9 @@
 						CreatedOnToolsVersion = 16.4;
 						TestTargetID = 1392DB5C2E3822C100C55169;
 					};
+					1392DB8A2E38232500C55169 = {
+						CreatedOnToolsVersion = 16.4;
+					};
 				};
 			};
 			buildConfigurationList = 1392DB582E3822C100C55169 /* Build configuration list for PBXProject "SFTPFiles" */;
@@ -203,6 +344,7 @@
 				1392DB5C2E3822C100C55169 /* SFTPFiles */,
 				1392DB692E3822C200C55169 /* SFTPFilesTests */,
 				1392DB732E3822C200C55169 /* SFTPFilesUITests */,
+				1392DB8A2E38232500C55169 /* SFTPFilesFileProvider */,
 			);
 		};
 /* End PBXProject section */
@@ -223,6 +365,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		1392DB722E3822C200C55169 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1392DB892E38232500C55169 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -253,6 +402,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		1392DB872E38232500C55169 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -265,6 +421,11 @@
 			isa = PBXTargetDependency;
 			target = 1392DB5C2E3822C100C55169 /* SFTPFiles */;
 			targetProxy = 1392DB752E3822C200C55169 /* PBXContainerItemProxy */;
+		};
+		1392DB992E38232500C55169 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1392DB8A2E38232500C55169 /* SFTPFilesFileProvider */;
+			targetProxy = 1392DB982E38232500C55169 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -395,6 +556,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SFTPFiles/SFTPFiles.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 693H6JQGD9;
@@ -412,9 +574,13 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = mansi.SFTPFiles;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -423,6 +589,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SFTPFiles/SFTPFiles.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 693H6JQGD9;
@@ -440,9 +607,13 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = mansi.SFTPFiles;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -458,9 +629,13 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = mansi.SFTPFilesTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SFTPFiles.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SFTPFiles";
 			};
 			name = Debug;
@@ -477,9 +652,13 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = mansi.SFTPFilesTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SFTPFiles.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SFTPFiles";
 			};
 			name = Release;
@@ -494,9 +673,13 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = mansi.SFTPFilesUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_TARGET_NAME = SFTPFiles;
 			};
 			name = Debug;
@@ -511,10 +694,74 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = mansi.SFTPFilesUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_TARGET_NAME = SFTPFiles;
+			};
+			name = Release;
+		};
+		1392DB9D2E38232500C55169 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SFTPFilesFileProvider/SFTPFilesFileProvider.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 693H6JQGD9;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SFTPFilesFileProvider/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SFTPFilesFileProvider;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = mansi.SFTPFiles.SFTPFilesFileProvider;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		1392DB9E2E38232500C55169 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SFTPFilesFileProvider/SFTPFilesFileProvider.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 693H6JQGD9;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SFTPFilesFileProvider/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SFTPFilesFileProvider;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = mansi.SFTPFiles.SFTPFilesFileProvider;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -553,6 +800,15 @@
 			buildConfigurations = (
 				1392DB852E3822C200C55169 /* Debug */,
 				1392DB862E3822C200C55169 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1392DB9C2E38232500C55169 /* Build configuration list for PBXNativeTarget "SFTPFilesFileProvider" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1392DB9D2E38232500C55169 /* Debug */,
+				1392DB9E2E38232500C55169 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
