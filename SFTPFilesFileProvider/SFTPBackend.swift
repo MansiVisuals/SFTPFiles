@@ -321,7 +321,7 @@ class SFTPBackend {
         startingAt page: NSFileProviderPage
     ) {
         print("Enumerating items for container: \(containerIdentifier.rawValue)")
-        connectionQueue.async {
+        connectionQueue.async(execute: DispatchWorkItem(block: {
             do {
                 if containerIdentifier == .rootContainer {
                     print("Enumerating root container")
@@ -340,19 +340,17 @@ class SFTPBackend {
                     }
                     return
                 }
-                guard let sftp = self.getOrConnectSFTP(for: SFTPConnection(
-                    name: containerItem.filename,
-                    hostname: "",
-                    port: 22,
-                    username: "",
-                    useKeyAuth: false,
-                    privateKeyPath: nil,
-                    state: .disconnected,
-                    lastConnected: nil,
-                    autoConnect: true,
-                    createdDate: Date(),
-                    id: containerItem.connectionId
-                )) else {
+                guard let sftp = ({ () -> MFTSftpConnection? in
+                    // Use all required parameters for SFTPConnection in the correct order
+                    self.getOrConnectSFTP(for: SFTPConnection(
+                        name: containerItem.filename,
+                        hostname: "",
+                        port: 22,
+                        username: "",
+                        useKeyAuth: false,
+                        privateKeyPath: nil
+                    ))
+                })() else {
                     print("No SFTP connection for container: \(containerItem.filename)")
                     DispatchQueue.main.async {
                         observer.finishEnumeratingWithError(NSFileProviderError(.serverUnreachable))
@@ -400,7 +398,7 @@ class SFTPBackend {
                     observer.finishEnumeratingWithError(error)
                 }
             }
-        }
+        }))
     }
     
     func enumerateChanges(
