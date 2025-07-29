@@ -55,26 +55,19 @@ class SFTPService {
         return sftp
     }
     
-    func listDirectory(sftp: MFTSftpConnection, path: String) throws -> [Any] {
+    func listDirectory(sftp: MFTSftpConnection, path: String) throws -> [MFTSftpItem] {
         return try sftp.contentsOfDirectory(atPath: path, maxItems: 0)
     }
-    
+
     func downloadFile(sftp: MFTSftpConnection, remotePath: String, to localURL: URL, progressHandler: @escaping (UInt64, UInt64) -> Bool) throws {
-        let outputStream = OutputStream(url: localURL, append: false)
-        guard let stream = outputStream else {
-            throw NSError(domain: "SFTPService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not create output stream"])
-        }
-        
-        try sftp.contents(atPath: remotePath, toStream: stream, fromPosition: 0, progress: progressHandler)
+        // Ensure parent directory exists
+        let parentDir = localURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
+        try sftp.downloadFile(atPath: remotePath, toFileAtPath: localURL.path, progress: progressHandler)
     }
-    
+
     func uploadFile(sftp: MFTSftpConnection, from localURL: URL, to remotePath: String, progressHandler: @escaping (UInt64) -> Bool) throws {
-        let inputStream = InputStream(url: localURL)
-        guard let stream = inputStream else {
-            throw NSError(domain: "SFTPService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not create input stream"])
-        }
-        
-        try sftp.write(stream: stream, toFileAtPath: remotePath, append: false, progress: progressHandler)
+        try sftp.uploadFile(atPath: localURL.path, toFileAtPath: remotePath, progress: progressHandler)
     }
     
     // MARK: - Connection Status Management

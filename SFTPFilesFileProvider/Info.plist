@@ -33,5 +33,13 @@
         <key>NSExtensionPrincipalClass</key>
         <string>$(PRODUCT_MODULE_NAME).FileProviderExtension</string>
     </dict>
+    <key>CFBundleIcons</key>
+    <dict>
+        <key>CFBundlePrimaryIcon</key>
+        <dict>
+            <key>CFBundleSymbolName</key>
+            <string>externaldrive.fill.badge.icloud</string>
+        </dict>
+    </dict>
 </dict>
 </plist>

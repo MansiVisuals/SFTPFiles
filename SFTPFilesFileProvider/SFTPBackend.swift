@@ -17,17 +17,14 @@ class SharedSFTPService {
     
     func connect(to connection: SFTPConnection, password: String) throws -> MFTSftpConnection {
         print("Attempting to connect to \(connection.hostname):\(connection.port)")
-        
         let sftp = MFTSftpConnection(
             hostname: connection.hostname,
-            port: Int(Int32(connection.port)),
+            port: Int(connection.port),
             username: connection.username,
             password: password
         )
-        
         try sftp.connect()
         try sftp.authenticate()
-        
         print("Successfully connected to \(connection.hostname)")
         return sftp
     }
@@ -59,7 +56,7 @@ class SharedSFTPService {
         }
     }
     
-    func listDirectory(sftp: MFTSftpConnection, path: String) throws -> [Any] {
+    func listDirectory(sftp: MFTSftpConnection, path: String) throws -> [MFTSftpItem] {
         print("Listing directory: \(path)")
         let items = try sftp.contentsOfDirectory(atPath: path, maxItems: 0)
         print("Found \(items.count) items in \(path)")
@@ -68,17 +65,10 @@ class SharedSFTPService {
     
     func downloadFile(sftp: MFTSftpConnection, remotePath: String, to localURL: URL, progressHandler: @escaping (UInt64, UInt64) -> Bool) throws {
         print("Downloading: \(remotePath) to \(localURL.lastPathComponent)")
-        
         // Ensure parent directory exists
         let parentDir = localURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true, attributes: nil)
-        
-        let outputStream = OutputStream(url: localURL, append: false)
-        guard let stream = outputStream else {
-            throw NSError(domain: "SFTPService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not create output stream"])
-        }
-        
-        try sftp.contents(atPath: remotePath, toStream: stream, fromPosition: 0, progress: progressHandler)
+        try sftp.downloadFile(atPath: remotePath, toFileAtPath: localURL.path, progress: progressHandler)
         print("Download completed: \(localURL.lastPathComponent)")
     }
 }
@@ -303,21 +293,18 @@ class SFTPBackend {
         startingAt page: NSFileProviderPage
     ) {
         print("Enumerating items for container: \(containerIdentifier.rawValue)")
-        
         connectionQueue.async {
             do {
                 if containerIdentifier == .rootContainer {
                     print("Enumerating root container")
                     let rootItems = Array(self.items.values.filter { $0.parentItemIdentifier == .rootContainer })
                     print("Found \(rootItems.count) root items")
-                    
                     DispatchQueue.main.async {
                         observer.didEnumerate(rootItems)
                         observer.finishEnumerating(upTo: nil)
                     }
                     return
                 }
-                
                 guard let containerItem = self.items[containerIdentifier] else {
                     print("Container item not found: \(containerIdentifier.rawValue)")
                     DispatchQueue.main.async {
@@ -325,7 +312,6 @@ class SFTPBackend {
                     }
                     return
                 }
-                
                 guard let sftp = self.connections[containerItem.connectionId] else {
                     print("No SFTP connection for container: \(containerItem.filename)")
                     DispatchQueue.main.async {
@@ -333,29 +319,24 @@ class SFTPBackend {
                     }
                     return
                 }
-                
                 print("Enumerating directory: \(containerItem.remotePath)")
                 let directoryItems = try SharedSFTPService.shared.listDirectory(
                     sftp: sftp,
                     path: containerItem.remotePath
                 )
-                
                 var providerItems: [NSFileProviderItem] = []
-                
                 for (index, item) in directoryItems.enumerated() {
-                    let filename = self.extractFilename(from: item, fallback: "unknown_file_\(index)")
-                    let isDirectory = self.extractIsDirectory(from: item)
-                    let modDate = self.extractModificationDate(from: item)
-                    let fileSize = self.extractFileSize(from: item)
-                    
+                    // Use MFTSftpItem properties directly
+                    let filename = item.filename
+                    let isDirectory = item.isDirectory
+                    let modDate = item.mtime
+                    let fileSize = Int64(item.size)
                     // Skip hidden files and current/parent directory entries
                     if filename.hasPrefix(".") || filename == "." || filename == ".." {
                         continue
                     }
-                    
                     let itemPath = "\(containerItem.remotePath)/\(filename)".replacingOccurrences(of: "//", with: "/")
                     let itemIdentifier = NSFileProviderItemIdentifier("item_\(containerItem.connectionId.uuidString)_\(abs(itemPath.hashValue))")
-                    
                     let providerItem = FileProviderItem(
                         identifier: itemIdentifier,
                         filename: filename,
@@ -367,17 +348,14 @@ class SFTPBackend {
                         modificationDate: modDate,
                         parentIdentifier: containerIdentifier
                     )
-                    
                     self.items[itemIdentifier] = providerItem
                     providerItems.append(providerItem)
                 }
-                
                 print("Enumerated \(providerItems.count) items in \(containerItem.remotePath)")
                 DispatchQueue.main.async {
                     observer.didEnumerate(providerItems)
                     observer.finishEnumerating(upTo: nil)
                 }
-                
             } catch {
                 print("Enumeration failed: \(error)")
                 DispatchQueue.main.async {
