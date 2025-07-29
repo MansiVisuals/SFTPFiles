@@ -76,6 +76,31 @@ class SharedSFTPService {
 // MARK: - SFTP Backend
 
 class SFTPBackend {
+    /// Returns a live SFTP connection for the given connection, reconnecting if needed.
+    private func getOrConnectSFTP(for connection: SFTPConnection) -> MFTSftpConnection? {
+        if let sftp = connections[connection.id] {
+            // Optionally, check if sftp.isConnected if your library supports it
+            return sftp
+        }
+        guard let password = keychainService.getPassword(for: connection.id) else {
+            print("No password found for connection: \(connection.name)")
+            persistenceService.setConnectionState(.disconnected, for: connection.id)
+            return nil
+        }
+        do {
+            let sftp = try SharedSFTPService.shared.connect(to: connection, password: password)
+            connectionQueue.sync {
+                connections[connection.id] = sftp
+            }
+            print("Backend: Successfully connected to \(connection.name)")
+            persistenceService.setConnectionState(.connected, for: connection.id)
+            return sftp
+        } catch {
+            print("Backend: Failed to connect to \(connection.name): \(error)")
+            persistenceService.setConnectionState(.error, for: connection.id)
+            return nil
+        }
+    }
     private var connections: [UUID: MFTSftpConnection] = [:]
     private var items: [NSFileProviderItemIdentifier: FileProviderItem] = [:]
     private let persistenceService = SharedPersistenceService()
@@ -93,19 +118,20 @@ class SFTPBackend {
         print("Backend: Loading connections...")
         let savedConnections = persistenceService.loadConnections()
         print("Backend: Found \(savedConnections.count) saved connections")
-        
         // Create root items for each connection on main queue
         DispatchQueue.main.async {
             for connection in savedConnections {
                 self.createRootItem(for: connection)
             }
         }
-        
         // Try to auto-connect in background
         connectionQueue.async {
             for connection in savedConnections {
                 if connection.autoConnect {
                     self.connectToServer(connection)
+                } else {
+                    // If not autoConnect, mark as disconnected
+                    self.persistenceService.setConnectionState(.disconnected, for: connection.id)
                 }
             }
         }
@@ -144,21 +170,23 @@ class SFTPBackend {
     
     private func connectToServer(_ connection: SFTPConnection) {
         print("Backend: Attempting to connect to \(connection.name)")
-        
-        guard let password = keychainService.getPassword(for: connection.id) else {
+        // Always fetch the latest password from the keychain
+        let password = keychainService.getPassword(for: connection.id)
+        if password == nil {
             print("No password found for connection: \(connection.name)")
+            persistenceService.setConnectionState(.disconnected, for: connection.id)
             return
         }
-        
         do {
-            let sftp = try SharedSFTPService.shared.connect(to: connection, password: password)
+            let sftp = try SharedSFTPService.shared.connect(to: connection, password: password!)
             connectionQueue.sync {
                 connections[connection.id] = sftp
             }
             print("Backend: Successfully connected to \(connection.name)")
-            
+            persistenceService.setConnectionState(.connected, for: connection.id)
         } catch {
             print("Backend: Failed to connect to \(connection.name): \(error)")
+            persistenceService.setConnectionState(.error, for: connection.id)
         }
     }
     
@@ -312,7 +340,19 @@ class SFTPBackend {
                     }
                     return
                 }
-                guard let sftp = self.connections[containerItem.connectionId] else {
+                guard let sftp = self.getOrConnectSFTP(for: SFTPConnection(
+                    name: containerItem.filename,
+                    hostname: "",
+                    port: 22,
+                    username: "",
+                    useKeyAuth: false,
+                    privateKeyPath: nil,
+                    state: .disconnected,
+                    lastConnected: nil,
+                    autoConnect: true,
+                    createdDate: Date(),
+                    id: containerItem.connectionId
+                )) else {
                     print("No SFTP connection for container: \(containerItem.filename)")
                     DispatchQueue.main.async {
                         observer.finishEnumeratingWithError(NSFileProviderError(.serverUnreachable))
@@ -325,13 +365,11 @@ class SFTPBackend {
                     path: containerItem.remotePath
                 )
                 var providerItems: [NSFileProviderItem] = []
-                for (index, item) in directoryItems.enumerated() {
-                    // Use MFTSftpItem properties directly
+                for item in directoryItems {
                     let filename = item.filename
                     let isDirectory = item.isDirectory
                     let modDate = item.mtime
                     let fileSize = Int64(item.size)
-                    // Skip hidden files and current/parent directory entries
                     if filename.hasPrefix(".") || filename == "." || filename == ".." {
                         continue
                     }

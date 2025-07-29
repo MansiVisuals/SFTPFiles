@@ -207,20 +207,21 @@ class FileProviderItem: NSObject, NSFileProviderItem {
 class SharedPersistenceService {
     private let userDefaults: UserDefaults?
     private let connectionsKey = "SavedSFTPConnections"
-    
+    private let connectionStatePrefix = "SFTPConnectionState_"
+
     init() {
         self.userDefaults = UserDefaults(suiteName: "group.mansi.SFTPFiles")
         if userDefaults == nil {
-            print("Warning: Could not access shared UserDefaults for group.mansi.SFTPFiles")
+            print("ERROR: Could not access shared UserDefaults for group.mansi.SFTPFiles. Check entitlements!")
         }
     }
-    
+
     func loadConnections() -> [SFTPConnection] {
         guard let data = userDefaults?.data(forKey: connectionsKey) else {
             print("No saved connections found in shared storage")
             return []
         }
-        
+
         do {
             let connections = try JSONDecoder().decode([SFTPConnection].self, from: data)
             print("Loaded \(connections.count) connections from shared storage")
@@ -230,7 +231,7 @@ class SharedPersistenceService {
             return []
         }
     }
-    
+
     func saveConnections(_ connections: [SFTPConnection]) {
         do {
             let data = try JSONEncoder().encode(connections)
@@ -241,9 +242,26 @@ class SharedPersistenceService {
             print("Failed to save connections to shared storage: \(error)")
         }
     }
-    
+
     func getConnection(withId id: UUID) -> SFTPConnection? {
         return loadConnections().first { $0.id == id }
+    }
+
+    // MARK: - Connection State Sync
+
+    func setConnectionState(_ state: ConnectionState, for id: UUID) {
+        let key = connectionStatePrefix + id.uuidString
+        userDefaults?.set(state.rawValue, forKey: key)
+        userDefaults?.synchronize()
+        print("[SharedPersistenceService] Set connection state for \(id): \(state.rawValue)")
+    }
+
+    func getConnectionState(for id: UUID) -> ConnectionState {
+        let key = connectionStatePrefix + id.uuidString
+        guard let value = userDefaults?.string(forKey: key), let state = ConnectionState(rawValue: value) else {
+            return .disconnected
+        }
+        return state
     }
 }
 

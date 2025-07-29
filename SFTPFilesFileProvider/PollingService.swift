@@ -42,26 +42,22 @@ class PollingService {
     
     private func pollForChanges() {
         print("Polling for file changes...")
-        
         Task {
             let connections = persistenceService.loadConnections()
-            
             guard !connections.isEmpty else {
                 print("No connections to poll")
                 return
             }
-            
-            var changedPaths: [String] = []
-            
+            var allChangedPaths: [String] = []
             for connection in connections {
                 if let changes = await checkConnectionForChanges(connection) {
-                    changedPaths.append(contentsOf: changes)
+                    allChangedPaths.append(contentsOf: changes)
                 }
             }
-            
-            if !changedPaths.isEmpty {
+            let changedPathsCopy = allChangedPaths
+            if !changedPathsCopy.isEmpty {
                 await MainActor.run {
-                    delegate?.pollingServiceDidDetectChanges(changedPaths)
+                    delegate?.pollingServiceDidDetectChanges(changedPathsCopy)
                 }
             } else {
                 print("No changes detected during polling")
@@ -81,30 +77,24 @@ class PollingService {
         do {
             let sftp = try SharedSFTPService.shared.connect(to: connection, password: password)
             defer { sftp.disconnect() }
-            
             // Check root directory for changes
             let rootPath = "/"
-            let items = try SharedSFTPService.shared.listDirectory(sftp: sftp, path: rootPath)
-            
+            _ = try SharedSFTPService.shared.listDirectory(sftp: sftp, path: rootPath)
             let connectionKey = connection.id.uuidString
             let currentTime = Date()
-            
             // For now, we'll use a simple approach - if we haven't polled this connection
             // in the last interval, consider it changed
             if lastKnownState[connectionKey] == nil {
                 lastKnownState[connectionKey] = currentTime
                 return [rootPath] // Signal initial change
             }
-            
             // Check if enough time has passed to consider checking for changes
             if let lastCheck = lastKnownState[connectionKey],
                currentTime.timeIntervalSince(lastCheck) > pollingInterval {
                 lastKnownState[connectionKey] = currentTime
                 return [rootPath] // Signal potential changes
             }
-            
             return nil
-            
         } catch {
             print("Failed to poll connection \(connection.name): \(error)")
             return nil
