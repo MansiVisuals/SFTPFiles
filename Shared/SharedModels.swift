@@ -205,60 +205,102 @@ class FileProviderItem: NSObject, NSFileProviderItem {
 // MARK: - Shared Services
 
 class SharedPersistenceService {
+    static let shared = SharedPersistenceService()
+    
     private let userDefaults: UserDefaults?
     private let connectionsKey = "SavedSFTPConnections"
     private let connectionStatePrefix = "SFTPConnectionState_"
 
-    init() {
-        self.userDefaults = UserDefaults(suiteName: "group.mansi.SFTPFiles")
-        if userDefaults == nil {
-            print("ERROR: Could not access shared UserDefaults for group.mansi.SFTPFiles. Check entitlements!")
+    private init() {
+        // Try multiple ways to access shared storage
+        if let sharedDefaults = UserDefaults(suiteName: "group.com.mansi.sftpfiles") {
+            self.userDefaults = sharedDefaults
+            print("[SharedPersistenceService] Successfully created shared UserDefaults with group.com.mansi.sftpfiles")
+        } else {
+            print("[SharedPersistenceService] Failed to create shared UserDefaults, falling back to standard")
+            self.userDefaults = UserDefaults.standard
         }
     }
 
     func loadConnections() -> [SFTPConnection] {
-        guard let data = userDefaults?.data(forKey: connectionsKey) else {
-            print("No saved connections found in shared storage")
+        guard let userDefaults = userDefaults else {
+            print("[SharedPersistenceService] No UserDefaults available")
+            return []
+        }
+        
+        guard let data = userDefaults.data(forKey: connectionsKey) else {
+            print("[SharedPersistenceService] No saved connections found in shared storage")
             return []
         }
 
         do {
             let connections = try JSONDecoder().decode([SFTPConnection].self, from: data)
-            print("Loaded \(connections.count) connections from shared storage")
+            print("[SharedPersistenceService] Loaded \(connections.count) connections from shared storage")
             return connections
         } catch {
-            print("Failed to load connections from shared storage: \(error)")
+            print("[SharedPersistenceService] Failed to load connections from shared storage: \(error)")
             return []
         }
     }
 
     func saveConnections(_ connections: [SFTPConnection]) {
+        guard let userDefaults = userDefaults else {
+            print("[SharedPersistenceService] No UserDefaults available for saving")
+            return
+        }
+        
         do {
             let data = try JSONEncoder().encode(connections)
-            userDefaults?.set(data, forKey: connectionsKey)
-            userDefaults?.synchronize()
-            print("Saved \(connections.count) connections to shared storage")
+            userDefaults.set(data, forKey: connectionsKey)
+            userDefaults.synchronize()
+            print("[SharedPersistenceService] Saved \(connections.count) connections to shared storage")
         } catch {
-            print("Failed to save connections to shared storage: \(error)")
+            print("[SharedPersistenceService] Failed to save connections to shared storage: \(error)")
         }
     }
 
     func getConnection(withId id: UUID) -> SFTPConnection? {
-        return loadConnections().first { $0.id == id }
+        let connection = loadConnections().first { $0.id == id }
+        if let connection = connection {
+            print("[SharedPersistenceService] Found connection: \(connection.name)")
+        } else {
+            print("[SharedPersistenceService] No connection found for ID: \(id)")
+        }
+        return connection
     }
 
     // MARK: - Connection State Sync
 
     func setConnectionState(_ state: ConnectionState, for id: UUID) {
+        guard let userDefaults = userDefaults else {
+            print("[SharedPersistenceService] No UserDefaults available for setting state")
+            return
+        }
+        
         let key = connectionStatePrefix + id.uuidString
-        userDefaults?.set(state.rawValue, forKey: key)
-        userDefaults?.synchronize()
+        userDefaults.set(state.rawValue, forKey: key)
+        userDefaults.synchronize()
         print("[SharedPersistenceService] Set connection state for \(id): \(state.rawValue)")
+        
+        // Also update the connection in the saved connections array
+        var connections = loadConnections()
+        if let index = connections.firstIndex(where: { $0.id == id }) {
+            connections[index].state = state
+            if state == .connected {
+                connections[index].lastConnected = Date()
+            }
+            saveConnections(connections)
+        }
     }
 
     func getConnectionState(for id: UUID) -> ConnectionState {
+        guard let userDefaults = userDefaults else {
+            print("[SharedPersistenceService] No UserDefaults available for getting state")
+            return .disconnected
+        }
+        
         let key = connectionStatePrefix + id.uuidString
-        guard let value = userDefaults?.string(forKey: key), let state = ConnectionState(rawValue: value) else {
+        guard let value = userDefaults.string(forKey: key), let state = ConnectionState(rawValue: value) else {
             return .disconnected
         }
         return state
@@ -268,13 +310,13 @@ class SharedPersistenceService {
 class SharedKeychainService {
     private let service = "com.mansi.sftpfiles"
     
-    // Use dynamic team identifier instead of hardcoded access group
+    // Use dynamic team identifier with correct keychain access group
     private var accessGroup: String {
         guard let teamIdentifier = Bundle.main.object(forInfoDictionaryKey: "AppIdentifierPrefix") as? String else {
-            // Fallback for development
-            return "group.mansi.SFTPFiles"
+            // Fallback for development - use the bundle identifier
+            return Bundle.main.bundleIdentifier?.components(separatedBy: ".").prefix(2).joined(separator: ".") ?? "com.mansi.sftpfiles"
         }
-        return "\(teamIdentifier)group.mansi.SFTPFiles"
+        return "\(teamIdentifier)com.mansi.sftpfiles"
     }
     
     func getPassword(for connectionId: UUID) -> String? {

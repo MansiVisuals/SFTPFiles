@@ -16,16 +16,19 @@ class SFTPConnectionManager: ObservableObject {
     private let keychainService = KeychainService()
     
     func loadConnections() {
-        print("📱 Loading connections from persistence...")
+        print("Loading connections from persistence...")
         connections = persistenceService.loadConnections()
-        print("📱 Loaded \(connections.count) connections")
+        print("Loaded \(connections.count) connections")
         
-        // Update connection states on load
+        // Sync connection states from shared storage
+        let sharedService = SharedPersistenceService.shared
         for i in connections.indices {
-            if connections[i].state == .connecting || connections[i].state == .connected {
-                connections[i].state = .disconnected
-            }
+            let currentState = sharedService.getConnectionState(for: connections[i].id)
+            connections[i].state = currentState
+            print("Synced state for \(connections[i].name): \(currentState)")
         }
+        
+        // Save to both storages to ensure sync
         saveConnections()
         notifyFileProvider()
     }
@@ -41,7 +44,7 @@ class SFTPConnectionManager: ObservableObject {
         // Store password securely
         if let password = password, !password.isEmpty {
             keychainService.store(password: password, for: connection.id)
-            print("🔐 Stored password for connection: \(connection.name)")
+            print("Stored password for connection: \(connection.name)")
         }
         
         // Test connection immediately after adding
@@ -58,7 +61,7 @@ class SFTPConnectionManager: ObservableObject {
             let connection = connections[index]
             keychainService.deletePassword(for: connection.id)
             keychainService.deletePrivateKey(for: connection.id)
-            print("🗑️ Deleted connection: \(connection.name)")
+            print("Deleted connection: \(connection.name)")
         }
         connections.remove(atOffsets: offsets)
         saveConnections()
@@ -69,14 +72,26 @@ class SFTPConnectionManager: ObservableObject {
         if let index = connections.firstIndex(where: { $0.id == connection.id }) {
             connections[index] = connection
             saveConnections()
+            
+            // Update shared storage
+            let sharedService = SharedPersistenceService.shared
+            sharedService.setConnectionState(connection.state, for: connection.id)
+            
             notifyFileProvider()
         }
     }
     
     func testAndUpdateConnection(_ connection: SFTPConnection, password: String?) async {
+        print("Testing connection: \(connection.name)")
+        
         // Update state to connecting
         if let index = connections.firstIndex(where: { $0.id == connection.id }) {
             connections[index].state = .connecting
+            print("Set connection state to connecting for: \(connection.name)")
+            
+            // Update shared storage immediately
+            let sharedService = SharedPersistenceService.shared
+            sharedService.setConnectionState(.connecting, for: connection.id)
         }
         
         // Test the connection
@@ -85,13 +100,21 @@ class SFTPConnectionManager: ObservableObject {
             password: password
         )
         
+        print("Connection test result for \(connection.name): \(success ? "SUCCESS" : "FAILED")")
+        
         // Update state based on result
         if let index = connections.firstIndex(where: { $0.id == connection.id }) {
             connections[index].state = success ? .connected : .error
             if success {
                 connections[index].lastConnected = Date()
+                print("Updated last connected time for: \(connection.name)")
             }
-            print("🔌 Connection test for \(connection.name): \(success ? "SUCCESS" : "FAILED")")
+            print("Updated connection state to: \(connections[index].state) for: \(connection.name)")
+            
+            // Update shared storage
+            let sharedService = SharedPersistenceService.shared
+            sharedService.setConnectionState(connections[index].state, for: connection.id)
+            print("Updated shared storage state for: \(connection.name)")
         }
         
         saveConnections()
@@ -99,7 +122,7 @@ class SFTPConnectionManager: ObservableObject {
     }
     
     func reconnectAllConnections() async {
-        print("🔄 Reconnecting all connections...")
+        print("Reconnecting all connections...")
         
         for connection in connections {
             let password = keychainService.getPassword(for: connection.id)
@@ -109,7 +132,12 @@ class SFTPConnectionManager: ObservableObject {
     
     private func saveConnections() {
         persistenceService.saveConnections(connections)
-        print("💾 Saved \(connections.count) connections to persistence")
+        
+        // Also save to shared storage
+        let sharedService = SharedPersistenceService.shared
+        sharedService.saveConnections(connections)
+        
+        print("Saved \(connections.count) connections to persistence")
     }
     
     private func notifyFileProvider() {
@@ -130,25 +158,25 @@ class SFTPConnectionManager: ObservableObject {
         let domain = NSFileProviderDomain(identifier: domainIdentifier, displayName: "SFTP Files")
         
         guard let manager = NSFileProviderManager(for: domain) else {
-            print("❌ Failed to create NSFileProviderManager for domain")
+            print("Failed to create NSFileProviderManager for domain")
             return
         }
         
         // Signal enumeration refresh for root container
         manager.signalEnumerator(for: .rootContainer) { error in
             if let error = error {
-                print("❌ Failed to signal Files app refresh: \(error)")
+                print("Failed to signal Files app refresh: \(error)")
             } else {
-                print("✅ Successfully signaled Files app refresh")
+                print("Successfully signaled Files app refresh")
             }
         }
         
-        // Signal working set enumeration as well to ensure refresh
+        // Signal working set enumeration as well
         manager.signalEnumerator(for: .workingSet) { error in
             if let error = error {
-                print("❌ Failed to signal working set refresh: \(error)")
+                print("Failed to signal working set refresh: \(error)")
             } else {
-                print("✅ Successfully signaled working set refresh")
+                print("Successfully signaled working set refresh")
             }
         }
     }

@@ -15,19 +15,22 @@ protocol PollingServiceDelegate: AnyObject {
 class PollingService {
     weak var delegate: PollingServiceDelegate?
     private var pollingTimer: Timer?
-    private let pollingInterval: TimeInterval = 300 // 5 minutes - more reasonable for battery life
+    private let pollingInterval: TimeInterval = 300 // 5 minutes
     
-    private let persistenceService = SharedPersistenceService()
-    private let keychainService = SharedKeychainService()
-    private var lastKnownState: [String: Date] = [:]
+    // Create instances directly - will work regardless of singleton availability
+    private lazy var persistenceService = ExtensionPersistenceService()
+    private lazy var keychainService = ExtensionKeychainService()
+    private var lastKnownState: [String: [String: Any]] = [:]
     
     func startPolling() {
         guard pollingTimer == nil else { return }
         
         print("Starting polling service with \(pollingInterval) second interval")
         
-        // Initial poll
-        pollForChanges()
+        // Initial poll after a short delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
+            self.pollForChanges()
+        }
         
         pollingTimer = Timer.scheduledTimer(withTimeInterval: pollingInterval, repeats: true) { _ in
             self.pollForChanges()
@@ -42,22 +45,31 @@ class PollingService {
     
     private func pollForChanges() {
         print("Polling for file changes...")
+        
         Task {
             let connections = persistenceService.loadConnections()
             guard !connections.isEmpty else {
                 print("No connections to poll")
                 return
             }
-            var allChangedPaths: [String] = []
+            
+            var changedPaths: [String] = []
+            
             for connection in connections {
-                if let changes = await checkConnectionForChanges(connection) {
-                    allChangedPaths.append(contentsOf: changes)
+                // Only poll connected or auto-connect connections
+                if connection.autoConnect || persistenceService.getConnectionState(for: connection.id) == .connected {
+                    if let changes = await checkConnectionForChanges(connection) {
+                        changedPaths.append(contentsOf: changes)
+                    }
                 }
             }
-            let changedPathsCopy = allChangedPaths
-            if !changedPathsCopy.isEmpty {
+            
+            // Capture the final state before passing to MainActor
+            let finalChangedPaths = changedPaths
+            
+            if !finalChangedPaths.isEmpty {
                 await MainActor.run {
-                    delegate?.pollingServiceDidDetectChanges(changedPathsCopy)
+                    delegate?.pollingServiceDidDetectChanges(finalChangedPaths)
                 }
             } else {
                 print("No changes detected during polling")
@@ -66,9 +78,6 @@ class PollingService {
     }
     
     private func checkConnectionForChanges(_ connection: SFTPConnection) async -> [String]? {
-        // Only poll connected connections or auto-connect connections
-        guard connection.autoConnect else { return nil }
-        
         guard let password = keychainService.getPassword(for: connection.id) else {
             print("No password available for connection: \(connection.name)")
             return nil
@@ -77,26 +86,46 @@ class PollingService {
         do {
             let sftp = try SharedSFTPService.shared.connect(to: connection, password: password)
             defer { sftp.disconnect() }
+            
             // Check root directory for changes
             let rootPath = "/"
-            _ = try SharedSFTPService.shared.listDirectory(sftp: sftp, path: rootPath)
+            let items = try SharedSFTPService.shared.listDirectory(sftp: sftp, path: rootPath)
+            
             let connectionKey = connection.id.uuidString
-            let currentTime = Date()
-            // For now, we'll use a simple approach - if we haven't polled this connection
-            // in the last interval, consider it changed
-            if lastKnownState[connectionKey] == nil {
-                lastKnownState[connectionKey] = currentTime
-                return [rootPath] // Signal initial change
+            var currentState: [String: Any] = [:]
+            
+            // Create a snapshot of current directory state
+            for item in items {
+                let filename = item.filename
+                if !filename.hasPrefix(".") && filename != "." && filename != ".." {
+                    currentState[filename] = [
+                        "size": item.size,
+                        "mtime": item.mtime.timeIntervalSince1970,
+                        "isDirectory": item.isDirectory
+                    ]
+                }
             }
-            // Check if enough time has passed to consider checking for changes
-            if let lastCheck = lastKnownState[connectionKey],
-               currentTime.timeIntervalSince(lastCheck) > pollingInterval {
-                lastKnownState[connectionKey] = currentTime
-                return [rootPath] // Signal potential changes
+            
+            // Compare with last known state
+            if let lastState = lastKnownState[connectionKey] {
+                // Check for differences
+                let hasChanges = !NSDictionary(dictionary: currentState).isEqual(to: lastState)
+                if hasChanges {
+                    print("Changes detected in connection: \(connection.name)")
+                    lastKnownState[connectionKey] = currentState
+                    return [rootPath]
+                }
+            } else {
+                // First time checking this connection
+                lastKnownState[connectionKey] = currentState
+                return [rootPath] // Signal initial state
             }
+            
             return nil
         } catch {
             print("Failed to poll connection \(connection.name): \(error)")
+            // Reset connection state on error
+            persistenceService.setConnectionState(.error, for: connection.id)
             return nil
         }
     }

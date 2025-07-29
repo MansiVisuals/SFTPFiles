@@ -32,10 +32,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             displayName: "SFTP Files"
         )
         
-        // Remove existing domain first to ensure clean setup
-        NSFileProviderManager.remove(domain) { [weak self] error in
+        // Check if domain already exists
+        NSFileProviderManager.getDomainsWithCompletionHandler { domains, error in
             if let error = error {
-                print("Note: Could not remove existing domain (normal on first run): \(error)")
+                print("Error getting domains: \(error)")
+                return
+            }
+            
+            let existingDomain = domains.first { $0.identifier == domainIdentifier }
+            if existingDomain != nil {
+                print("File provider domain already exists")
+                // Signal initial enumeration for existing domain
+                self.signalInitialEnumeration(for: domain)
+                return
             }
             
             // Add the domain
@@ -47,7 +56,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                     
                     // Signal initial enumeration after a short delay
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                        self?.signalInitialEnumeration(for: domain)
+                        self.signalInitialEnumeration(for: domain)
                     }
                 }
             }
@@ -60,11 +69,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             return
         }
         
+        print("Signaling initial enumeration for domain: \(domain.identifier.rawValue)")
+        
         manager.signalEnumerator(for: .rootContainer) { error in
             if let error = error {
                 print("Failed to signal initial enumeration: \(error)")
             } else {
                 print("Successfully signaled initial enumeration")
+            }
+        }
+        
+        // Also signal working set to ensure Files app sees the provider
+        manager.signalEnumerator(for: .workingSet) { error in
+            if let error = error {
+                print("Failed to signal working set enumeration: \(error)")
+            } else {
+                print("Successfully signaled working set enumeration")
             }
         }
     }

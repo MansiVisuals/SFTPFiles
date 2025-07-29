@@ -23,7 +23,7 @@
     <key>NSExtension</key>
     <dict>
         <key>NSExtensionFileProviderDocumentGroup</key>
-        <string>group.mansi.SFTPFiles</string>
+        <string>group.com.mansi.sftpfiles</string>
         <key>NSExtensionFileProviderSupportsEnumeration</key>
         <true/>
         <key>NSExtensionFileProviderSupportsFPFS</key>

@@ -7,12 +7,25 @@
 		<key>SFTPFiles.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>0</integer>
+			<integer>1</integer>
 		</dict>
 		<key>SFTPFilesFileProvider.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>1</integer>
+			<integer>0</integer>
+		</dict>
+	</dict>
+	<key>SuppressBuildableAutocreation</key>
+	<dict>
+		<key>1392DB5C2E3822C100C55169</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>1392DB8A2E38232500C55169</key>
+		<dict>
+			<key>primary</key>
+			<true/>
 		</dict>
 	</dict>
 </dict>

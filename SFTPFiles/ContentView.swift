@@ -80,7 +80,7 @@ struct ContentView: View {
                                 .font(.headline)
                                 .foregroundColor(.secondary)
                             
-                            Text("Add your first SFTP server connection to get started. Connections will appear in the Files app.")
+                            Text("Add your first SFTP server connection to get started. Connections will appear in the Files app.")  
                                 .font(.footnote)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
@@ -125,6 +125,9 @@ struct ContentView: View {
             }
             .navigationTitle("SFTP Files")
             .navigationBarTitleDisplayMode(.large)
+            .refreshable {
+                await connectionManager.reconnectAllConnections()
+            }
         }
         .sheet(isPresented: $showingAddConnection) {
             AddConnectionView()
@@ -132,6 +135,25 @@ struct ContentView: View {
         }
         .onAppear {
             connectionManager.loadConnections()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            // Refresh connections when app becomes active
+            connectionManager.loadConnections() // Sync states first
+            Task {
+                await connectionManager.reconnectAllConnections()
+            }
+        }
+        // Add a timer to periodically sync connection states from shared storage
+        .onReceive(Timer.publish(every: 5.0, on: .main, in: .common).autoconnect()) { _ in
+            // Sync connection states without reconnecting - use singleton to avoid spam
+            let sharedService = SharedPersistenceService.shared
+            for i in connectionManager.connections.indices {
+                let currentState = sharedService.getConnectionState(for: connectionManager.connections[i].id)
+                if connectionManager.connections[i].state != currentState {
+                    print("UI: Syncing state for \(connectionManager.connections[i].name): \(connectionManager.connections[i].state) -> \(currentState)")
+                    connectionManager.connections[i].state = currentState
+                }
+            }
         }
     }
     
@@ -180,7 +202,7 @@ struct SettingsConnectionRow: View {
         HStack {
             // Icon
             Image(systemName: connectionIcon)
-                .foregroundColor(.blue)
+                .foregroundColor(iconColor)
                 .font(.title3)
                 .frame(width: 24)
             
@@ -225,13 +247,26 @@ struct SettingsConnectionRow: View {
     private var connectionIcon: String {
         switch connection.state {
         case .connected:
-            return "externaldrive.fill"
+            return "externaldrive.fill.badge.checkmark"
         case .connecting:
             return "externaldrive.badge.timemachine"
         case .error:
             return "externaldrive.badge.xmark"
         case .disconnected:
             return "externaldrive"
+        }
+    }
+    
+    private var iconColor: Color {
+        switch connection.state {
+        case .connected:
+            return .green
+        case .connecting:
+            return .orange
+        case .error:
+            return .red
+        case .disconnected:
+            return .blue
         }
     }
     

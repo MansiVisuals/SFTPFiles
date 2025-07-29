@@ -4,11 +4,11 @@
 <dict>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.mansi.SFTPFiles</string>
+		<string>group.com.mansi.sftpfiles</string>
 	</array>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)group.mansi.SFTPFiles</string>
+		<string>$(AppIdentifierPrefix)group.mansi.sftpfiles</string>
 	</array>
 </dict>
 </plist>
