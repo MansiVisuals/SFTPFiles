@@ -132,7 +132,7 @@ class SFTPConnectionManager: ObservableObject {
     
     private func signalFileProviderRefresh() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            let domainIdentifier = NSFileProviderDomainIdentifier(rawValue: "group.com.mansi.sftpfiles")
+            let domainIdentifier = NSFileProviderDomainIdentifier(rawValue: "sftpfiles.domain")
             let domain = NSFileProviderDomain(identifier: domainIdentifier, displayName: "SFTP Files")
             
             guard let manager = NSFileProviderManager(for: domain) else {

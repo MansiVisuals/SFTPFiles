@@ -9,11 +9,13 @@
         <key>NSExtensionFileProviderSupportsEnumeration</key>
         <true/>
         <key>NSExtensionFileProviderSupportsFPFS</key>
+        <true/>
+        <key>NSExtensionFileProviderSupportsMultipleDomains</key>
         <false/>
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.fileprovider-nonui</string>
-<key>NSExtensionPrincipalClass</key>
-<string>SFTPFilesFileProvider.FileProviderExtension</string>
+        <key>NSExtensionPrincipalClass</key>
+        <string>$(PRODUCT_MODULE_NAME).FileProviderExtension</string>
     </dict>
     <key>CFBundleIcons</key>
     <dict>
