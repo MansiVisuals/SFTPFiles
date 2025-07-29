@@ -19,6 +19,7 @@ struct AddConnectionView: View {
     @State private var useKeyAuth = false
     @State private var privateKeyPath = ""
     @State private var autoConnect = true
+    @State private var remotePath = "/"
     @State private var testingConnection = false
     @State private var testResult: TestResult?
     @State private var showValidationErrors = false
@@ -52,6 +53,12 @@ struct AddConnectionView: View {
                         placeholder: "22"
                     )
                     .keyboardType(.numberPad)
+
+                    SettingsTextField(
+                        title: "Remote Path",
+                        text: $remotePath,
+                        placeholder: "/ (default)"
+                    )
                 }
                 
                 Section("Authentication") {
@@ -230,11 +237,10 @@ struct AddConnectionView: View {
             port: Int(port) ?? 22,
             username: username.trimmingCharacters(in: .whitespacesAndNewlines),
             useKeyAuth: useKeyAuth,
-            privateKeyPath: useKeyAuth ? privateKeyPath.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+            privateKeyPath: useKeyAuth ? privateKeyPath.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
+            remotePath: remotePath.isEmpty ? nil : remotePath
         )
-        
         connection.autoConnect = autoConnect
-        
         connectionManager.addConnection(connection, password: useKeyAuth ? nil : password)
         dismiss()
     }

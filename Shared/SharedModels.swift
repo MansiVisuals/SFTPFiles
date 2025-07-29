@@ -1,7 +1,7 @@
 //
 //  SharedModels.swift
 //  SFTPFiles & SFTPFilesFileProvider
-//  ⚠️ ADD THIS FILE TO BOTH TARGETS ⚠️
+//  ADD THIS FILE TO BOTH TARGETS
 //
 //  Created by Maikel Mansi on 28/07/2025.
 //
@@ -20,38 +20,38 @@ struct SFTPConnection: Identifiable, Codable, Hashable, Equatable {
     var username: String
     var useKeyAuth: Bool
     var privateKeyPath: String?
+    var remotePath: String? // Optional remote path for this connection
     var state: ConnectionState = .disconnected
     var lastConnected: Date?
     var autoConnect: Bool = true
     var createdDate: Date = Date()
     
     enum CodingKeys: String, CodingKey {
-        case id, name, hostname, port, username, useKeyAuth, privateKeyPath, autoConnect, lastConnected, createdDate
+        case id, name, hostname, port, username, useKeyAuth, privateKeyPath, remotePath, autoConnect, lastConnected, createdDate
     }
     
-    init(name: String, hostname: String, port: Int, username: String, useKeyAuth: Bool, privateKeyPath: String?) {
+    init(name: String, hostname: String, port: Int, username: String, useKeyAuth: Bool, privateKeyPath: String?, remotePath: String? = nil) {
         self.name = name
         self.hostname = hostname
         self.port = port
         self.username = username
         self.useKeyAuth = useKeyAuth
         self.privateKeyPath = privateKeyPath
+        self.remotePath = remotePath
     }
     
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        
         name = try container.decode(String.self, forKey: .name)
         hostname = try container.decode(String.self, forKey: .hostname)
         port = try container.decode(Int.self, forKey: .port)
         username = try container.decode(String.self, forKey: .username)
         useKeyAuth = try container.decode(Bool.self, forKey: .useKeyAuth)
-        
         privateKeyPath = try container.decodeIfPresent(String.self, forKey: .privateKeyPath)
+        remotePath = try container.decodeIfPresent(String.self, forKey: .remotePath)
         autoConnect = try container.decodeIfPresent(Bool.self, forKey: .autoConnect) ?? true
         lastConnected = try container.decodeIfPresent(Date.self, forKey: .lastConnected)
         createdDate = try container.decodeIfPresent(Date.self, forKey: .createdDate) ?? Date()
-        
         if let uuidString = try container.decodeIfPresent(String.self, forKey: .id),
            let uuid = UUID(uuidString: uuidString) {
             id = uuid
@@ -62,7 +62,6 @@ struct SFTPConnection: Identifiable, Codable, Hashable, Equatable {
     
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        
         try container.encode(id.uuidString, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encode(hostname, forKey: .hostname)
@@ -70,12 +69,11 @@ struct SFTPConnection: Identifiable, Codable, Hashable, Equatable {
         try container.encode(username, forKey: .username)
         try container.encode(useKeyAuth, forKey: .useKeyAuth)
         try container.encodeIfPresent(privateKeyPath, forKey: .privateKeyPath)
+        try container.encodeIfPresent(remotePath, forKey: .remotePath)
         try container.encode(autoConnect, forKey: .autoConnect)
         try container.encodeIfPresent(lastConnected, forKey: .lastConnected)
         try container.encode(createdDate, forKey: .createdDate)
     }
-    
-    // MARK: - Protocol Conformance
     
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
@@ -117,6 +115,7 @@ class FileProviderItem: NSObject, NSFileProviderItem {
     private let _documentSize: NSNumber?
     private let _contentModificationDate: Date?
     private let _creationDate: Date?
+    private let _isSymlink: Bool
     
     init(
         identifier: NSFileProviderItemIdentifier,
@@ -128,6 +127,7 @@ class FileProviderItem: NSObject, NSFileProviderItem {
         fileSize: Int64? = nil,
         modificationDate: Date? = nil,
         creationDate: Date? = nil,
+        isSymlink: Bool = false,
         parentIdentifier: NSFileProviderItemIdentifier = .rootContainer
     ) {
         self.itemIdentifier = identifier
@@ -137,7 +137,9 @@ class FileProviderItem: NSObject, NSFileProviderItem {
         self.isDirectory = isDirectory
         self.remotePath = remotePath
         self.connectionId = connectionId
+        self._isSymlink = isSymlink
         
+        // Set appropriate capabilities based on item type
         if isDirectory {
             self.capabilities = [.allowsReading, .allowsContentEnumerating]
         } else {
@@ -145,16 +147,16 @@ class FileProviderItem: NSObject, NSFileProviderItem {
         }
         
         self._documentSize = fileSize != nil ? NSNumber(value: fileSize!) : nil
-        self._contentModificationDate = modificationDate
+        self._contentModificationDate = modificationDate ?? Date()
         self._creationDate = creationDate ?? modificationDate ?? Date()
         
         super.init()
     }
     
-    // MARK: - NSFileProviderItem
+    // MARK: - NSFileProviderItem Protocol
     
     var documentSize: NSNumber? {
-        return isDirectory ? nil : _documentSize
+        return isDirectory ? nil : (_documentSize ?? NSNumber(value: 0))
     }
     
     var contentModificationDate: Date? {
@@ -166,7 +168,7 @@ class FileProviderItem: NSObject, NSFileProviderItem {
     }
     
     var childItemCount: NSNumber? {
-        return isDirectory ? nil : NSNumber(value: 0)
+        return isDirectory ? NSNumber(value: 0) : nil
     }
     
     var downloadingError: Error? { return nil }
@@ -182,24 +184,25 @@ class FileProviderItem: NSObject, NSFileProviderItem {
     var mostRecentEditorNameComponents: PersonNameComponents? { return nil }
     
     var versionIdentifier: Data? {
-        guard let modDate = _contentModificationDate else { 
-            return String(Date().timeIntervalSince1970).data(using: .utf8)
-        }
-        return String(modDate.timeIntervalSince1970).data(using: .utf8)
+        let timestamp = _contentModificationDate?.timeIntervalSince1970 ?? Date().timeIntervalSince1970
+        return String(timestamp).data(using: .utf8)
     }
     
     var userInfo: [AnyHashable: Any]? {
         return [
             "remotePath": remotePath,
             "connectionId": connectionId.uuidString,
-            "isDirectory": isDirectory
+            "isDirectory": isDirectory,
+            "isSymlink": _isSymlink
         ]
     }
     
     var tagData: Data? { return nil }
     var favoriteRank: NSNumber? { return nil }
     var isTrashed: Bool { return false }
-    var symlinkTargetPath: String? { return nil }
+    var symlinkTargetPath: String? { 
+        return _isSymlink ? remotePath : nil 
+    }
 }
 
 // MARK: - Shared Services
@@ -212,77 +215,58 @@ class SharedPersistenceService {
     private let connectionStatePrefix = "SFTPConnectionState_"
 
     private init() {
-        // Try multiple ways to access shared storage
+        // Try shared storage first, fall back to standard if it fails
         if let sharedDefaults = UserDefaults(suiteName: "group.com.mansi.sftpfiles") {
             self.userDefaults = sharedDefaults
-            print("[SharedPersistenceService] Successfully created shared UserDefaults with group.com.mansi.sftpfiles")
+            print("[SharedPersistenceService] Using shared UserDefaults")
         } else {
-            print("[SharedPersistenceService] Failed to create shared UserDefaults, falling back to standard")
+            print("[SharedPersistenceService] Shared UserDefaults failed, using standard")
             self.userDefaults = UserDefaults.standard
         }
     }
 
     func loadConnections() -> [SFTPConnection] {
         guard let userDefaults = userDefaults else {
-            print("[SharedPersistenceService] No UserDefaults available")
             return []
         }
         
         guard let data = userDefaults.data(forKey: connectionsKey) else {
-            print("[SharedPersistenceService] No saved connections found in shared storage")
             return []
         }
 
         do {
             let connections = try JSONDecoder().decode([SFTPConnection].self, from: data)
-            print("[SharedPersistenceService] Loaded \(connections.count) connections from shared storage")
             return connections
         } catch {
-            print("[SharedPersistenceService] Failed to load connections from shared storage: \(error)")
+            print("[SharedPersistenceService] Failed to decode connections: \(error)")
             return []
         }
     }
 
     func saveConnections(_ connections: [SFTPConnection]) {
-        guard let userDefaults = userDefaults else {
-            print("[SharedPersistenceService] No UserDefaults available for saving")
-            return
-        }
+        guard let userDefaults = userDefaults else { return }
         
         do {
             let data = try JSONEncoder().encode(connections)
             userDefaults.set(data, forKey: connectionsKey)
             userDefaults.synchronize()
-            print("[SharedPersistenceService] Saved \(connections.count) connections to shared storage")
         } catch {
-            print("[SharedPersistenceService] Failed to save connections to shared storage: \(error)")
+            print("[SharedPersistenceService] Failed to encode connections: \(error)")
         }
     }
 
     func getConnection(withId id: UUID) -> SFTPConnection? {
-        let connection = loadConnections().first { $0.id == id }
-        if let connection = connection {
-            print("[SharedPersistenceService] Found connection: \(connection.name)")
-        } else {
-            print("[SharedPersistenceService] No connection found for ID: \(id)")
-        }
-        return connection
+        return loadConnections().first { $0.id == id }
     }
 
-    // MARK: - Connection State Sync
-
     func setConnectionState(_ state: ConnectionState, for id: UUID) {
-        guard let userDefaults = userDefaults else {
-            print("[SharedPersistenceService] No UserDefaults available for setting state")
-            return
-        }
+        guard let userDefaults = userDefaults else { return }
         
         let key = connectionStatePrefix + id.uuidString
         userDefaults.set(state.rawValue, forKey: key)
         userDefaults.synchronize()
-        print("[SharedPersistenceService] Set connection state for \(id): \(state.rawValue)")
         
-        // Also update the connection in the saved connections array
+        // Update connection in saved array
         var connections = loadConnections()
         if let index = connections.firstIndex(where: { $0.id == id }) {
             connections[index].state = state
@@ -294,13 +278,11 @@ class SharedPersistenceService {
     }
 
     func getConnectionState(for id: UUID) -> ConnectionState {
-        guard let userDefaults = userDefaults else {
-            print("[SharedPersistenceService] No UserDefaults available for getting state")
-            return .disconnected
-        }
+        guard let userDefaults = userDefaults else { return .disconnected }
         
         let key = connectionStatePrefix + id.uuidString
-        guard let value = userDefaults.string(forKey: key), let state = ConnectionState(rawValue: value) else {
+        guard let value = userDefaults.string(forKey: key), 
+              let state = ConnectionState(rawValue: value) else {
             return .disconnected
         }
         return state
@@ -310,86 +292,115 @@ class SharedPersistenceService {
 class SharedKeychainService {
     private let service = "com.mansi.sftpfiles"
     
-    // Use dynamic team identifier with correct keychain access group
     private var accessGroup: String {
-        guard let teamIdentifier = Bundle.main.object(forInfoDictionaryKey: "AppIdentifierPrefix") as? String else {
-            // Fallback for development - use the bundle identifier
-            return Bundle.main.bundleIdentifier?.components(separatedBy: ".").prefix(2).joined(separator: ".") ?? "com.mansi.sftpfiles"
-        }
-        return "\(teamIdentifier)com.mansi.sftpfiles"
+        return "group.com.mansi.sftpfiles"
     }
     
     func getPassword(for connectionId: UUID) -> String? {
         let account = connectionId.uuidString
         
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecAttrAccessGroup as String: accessGroup
+        // Try multiple query configurations for maximum compatibility
+        let queries: [[String: Any]] = [
+            // Standard query with access group
+            [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne,
+                kSecAttrAccessGroup as String: accessGroup
+            ],
+            // Fallback without access group
+            [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne
+            ]
         ]
         
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let password = String(data: data, encoding: .utf8) else {
-            if status != errSecItemNotFound {
-                let errorMessage = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error"
-                print("Failed to retrieve password from keychain: \(status) - \(errorMessage)")
+        for query in queries {
+            var result: AnyObject?
+            let status = SecItemCopyMatching(query as CFDictionary, &result)
+            
+            if status == errSecSuccess,
+               let data = result as? Data,
+               let password = String(data: data, encoding: .utf8) {
+                return password
             }
-            return nil
         }
         
-        return password
+        return nil
     }
     
     func store(password: String, for connectionId: UUID) {
         let data = password.data(using: .utf8)!
         let account = connectionId.uuidString
         
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: data,
-            kSecAttrAccessGroup as String: accessGroup
+        // Delete existing items first
+        let deleteQueries: [[String: Any]] = [
+            [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+                kSecAttrAccessGroup as String: accessGroup
+            ],
+            [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account
+            ]
         ]
         
-        // Delete existing item first
-        SecItemDelete(query as CFDictionary)
+        for deleteQuery in deleteQueries {
+            SecItemDelete(deleteQuery as CFDictionary)
+        }
         
-        // Add new item
-        let status = SecItemAdd(query as CFDictionary, nil)
+        // Try to add with access group first
+        let addQueries: [[String: Any]] = [
+            [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+                kSecValueData as String: data,
+                kSecAttrAccessGroup as String: accessGroup
+            ],
+            [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+                kSecValueData as String: data
+            ]
+        ]
         
-        if status == errSecSuccess {
-            print("Successfully stored password for connection: \(account)")
-        } else {
-            let errorMessage = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error"
-            print("Failed to store password in keychain: \(status) - \(errorMessage)")
+        for addQuery in addQueries {
+            let status = SecItemAdd(addQuery as CFDictionary, nil)
+            if status == errSecSuccess {
+                break
+            }
         }
     }
     
     func deletePassword(for connectionId: UUID) {
         let account = connectionId.uuidString
         
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecAttrAccessGroup as String: accessGroup
+        let queries: [[String: Any]] = [
+            [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+                kSecAttrAccessGroup as String: accessGroup
+            ],
+            [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account
+            ]
         ]
         
-        let status = SecItemDelete(query as CFDictionary)
-        
-        if status == errSecSuccess {
-            print("Successfully deleted password for connection: \(account)")
-        } else if status != errSecItemNotFound {
-            let errorMessage = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error"
-            print("Failed to delete password from keychain: \(status) - \(errorMessage)")
+        for query in queries {
+            SecItemDelete(query as CFDictionary)
         }
     }
 }

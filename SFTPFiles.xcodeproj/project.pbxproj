@@ -99,11 +99,21 @@
 			);
 			target = 1392DB8A2E38232500C55169 /* SFTPFilesFileProvider */;
 		};
+		13C2083C2E38D0DF000E8845 /* Exceptions for "SFTPFiles" folder in "SFTPFilesFileProvider" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Services/SFTPService.swift,
+			);
+			target = 1392DB8A2E38232500C55169 /* SFTPFilesFileProvider */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1392DB5F2E3822C100C55169 /* SFTPFiles */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				13C2083C2E38D0DF000E8845 /* Exceptions for "SFTPFiles" folder in "SFTPFilesFileProvider" target */,
+			);
 			path = SFTPFiles;
 			sourceTree = "<group>";
 		};

@@ -12,8 +12,18 @@ class PersistenceService {
     private let connectionsKey = "SavedSFTPConnections"
     
     init() {
-        // Use the correct app group identifier that matches your entitlements
-        self.userDefaults = UserDefaults(suiteName: "group.mansi.SFTPFiles")
+        if let sharedDefaults = UserDefaults(suiteName: "group.com.mansi.sftpfiles") {
+            self.userDefaults = sharedDefaults
+            print("[PersistenceService] Using shared UserDefaults")
+            if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.mansi.sftpfiles") {
+                print("[DEBUG] Shared UserDefaults path: \(url.path)")
+            } else {
+                print("[DEBUG] Shared UserDefaults path: nil")
+            }
+        } else {
+            print("[PersistenceService] Using standard UserDefaults")
+            self.userDefaults = UserDefaults.standard
+        }
     }
     
     func saveConnections(_ connections: [SFTPConnection]) {
@@ -39,7 +49,6 @@ class PersistenceService {
             return connections
         } catch {
             print("Failed to load connections: \(error)")
-            // Try to recover by resetting corrupted data
             userDefaults?.removeObject(forKey: connectionsKey)
             return []
         }
@@ -50,8 +59,6 @@ class PersistenceService {
         userDefaults?.synchronize()
         print("Deleted all saved connections")
     }
-    
-    // MARK: - Connection-specific methods
     
     func updateConnection(_ connection: SFTPConnection) {
         var connections = loadConnections()

@@ -53,6 +53,19 @@ struct SettingsView: View {
                     .foregroundColor(.secondary)
             }
             
+            Section("Debug & Reset") {
+                Button("Clear All App Data") {
+                    if let appDelegate = UIApplication.shared.delegate as? AppDelegate {
+                        appDelegate.clearAllAppData()
+                    }
+                }
+                .foregroundColor(.red)
+                
+                Text("Removes all connections, File Provider domains, and app settings. Use this to completely reset the app.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
             Section("About") {
                 HStack {
                     Text("Version")
